@@ -94,10 +94,9 @@ class SelfAttention(nn.Module):
         self.w_o = nn.Linear(num_heads * d_value, d_model, bias=bias)
         
         # in Karpathy's tutorial, he uses two dropouts.
-        # The paper seems to only imply one (at the end).
+        # The paper seems to only imply one (at the end of each sub-layer).
         # not sure why there's a difference, but there you go.
-        self.attention_dropout = nn.Dropout(p_dropout)
-        self.residual_dropout = nn.Dropout(p_dropout)
+        self.dropout = nn.Dropout(p_dropout)
 
     def forward(self, x):
         batch_size = self.config.batch_size
@@ -184,8 +183,7 @@ class SelfAttention(nn.Module):
         x = x / math.sqrt(d_key)
         # softmax to get probabilities
         x = functional.softmax(attention, dim=-1)
-        # dropout
-        x = self.attention_dropout(x)
+        # right here is where karpathy would insert the other dropout
 
         # multiply the attention scores by the value vectors and sum them
         # (batch_size, num_heads, sequence_length, d_value)
@@ -205,7 +203,7 @@ class SelfAttention(nn.Module):
         # note that this has the same dimension as the original input
         # (batch_size, sequence_length, d_model)
         x = self.w_o(x)
-        x = self.residual_dropout(x)
+        x = self.dropout(x)
         return x
 
 class FeedForward(nn.Module):
