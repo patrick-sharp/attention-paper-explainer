@@ -92,7 +92,7 @@ class SelfAttention(nn.Module):
         # combines all heads
         # (num_heads * d_value, d_model)
         self.w_o = nn.Linear(num_heads * d_value, d_model, bias=bias)
-        
+
         # in Karpathy's tutorial, he uses two dropouts.
         # The paper seems to only imply one (at the end of each sub-layer).
         # not sure why there's a difference, but there you go.
@@ -123,39 +123,38 @@ class SelfAttention(nn.Module):
 
         # we want all the queries * all the keys (dot prod) for each head
         # we want (batch_size, num_heads, sequence_length, sequence_length
-        # 
+        #
         # get one score for one token:
         #    dot product of query for token and key for token
-        #    (1, d_key) 
+        #    (1, d_key)
         #    @ (d_key, 1)
         #    = (1, 1)
-        # 
+        #
         # get all the scores for a token
         #    dot product of query for token and key for token
-        #    (1, d_key) 
+        #    (1, d_key)
         #    @ (d_key, sequence_length)
         #    = (1, sequence_length)
-        # 
+        #
         # get scores for one head
-        #    (sequence_length, d_key) 
+        #    (sequence_length, d_key)
         #    @ (d_key, sequence_length)
         #    = (sequence_length, sequence_length)
-        # 
+        #
         # INTERMISSION: remind about matmul rules
         #
         # get the scores for all heads for one sentence in the batch
-        #    (num_heads, sequence_length, d_key) 
+        #    (num_heads, sequence_length, d_key)
         #    @ (num_heads, d_key, sequence_length)
         #    = (num_heads, sequence_length, sequence_length)
         #
         # get the scores for all sentences in a batch
-        #    (batch_size, num_heads, sequence_length, d_key) 
+        #    (batch_size, num_heads, sequence_length, d_key)
         #    @ (batch_size, num_heads, d_key, sequence_length)
         #    = (batch_size, num_heads, sequence_length, sequence_length)
         #
         # INTERMISSION: learn about how torch.view works and the underlying
         #    order of tensor in memory
-
 
         # split into heads
 
@@ -175,7 +174,7 @@ class SelfAttention(nn.Module):
         v = v.view(batch_size, sequence_length, num_heads, d_value)
         # (batch_size, num_heads, sequence_length, d_value)
         v = v.transpose(1, 2)
-        
+
         # compute attention scores
         # (batch_size, num_heads, sequence_length, sequence_length)
         x = q @ kT
@@ -206,6 +205,7 @@ class SelfAttention(nn.Module):
         x = self.dropout(x)
         return x
 
+
 class FeedForward(nn.Module):
     def __init__(self, config):
         super().__init__()
@@ -222,7 +222,7 @@ class FeedForward(nn.Module):
 
     def forward(self, x):
         # x is (batch_size, sequence_length, d_model)
-        # (batch_size, sequence_length, d_ff) 
+        # (batch_size, sequence_length, d_ff)
         x = self.w_1(x)
         # activation function
         x = torch.relu(x)
@@ -233,15 +233,47 @@ class FeedForward(nn.Module):
 
         return x
 
+
+# Copied from Karpathy's nanoGPT
+class LayerNorm(nn.Module):
+    """LayerNorm but with an optional bias. PyTorch doesn't support simply bias=False"""
+
+    def __init__(self, config):
+        super().__init__()
+        d_model = config.d_model
+        bias = config.bias
+
+        self.layer_norm_epsilon = config.layer_norm_epsilon
+
+        self.weight = nn.Parameter(torch.ones(d_model))
+        self.bias = nn.Parameter(torch.zeros(d_model)) if bias else None
+
+    def forward(self, x):
+        return functional.layer_norm(
+            x, self.weight.shape, self.weight, self.bias, self.layer_norm_epsilon
+        )
+
+
+
+
 class EncoderBlock(nn.Module):
     def __init__(self, config):
-        pass
+        super().__init__()
+        self.attention = SelfAttention(config)
+        self.layer_norm_1 = LayerNorm(config)
+        self.feed_forward = FeedForward(config)
+        self.layer_norm_2 = LayerNorm(config)
 
+    def forward(self, x):
+        x = self.attention(x)
+        x = self.layer_norm_1(x)
+        x = self.feed_forward(x)
+        x = self.layer_norm_2(x)
+        return x
 
 class Encoder(nn.Module):
     def __init__(self, config):
         pass
-
 
 class DecoderBlock(nn.Module):
     def __init__(self, config):
