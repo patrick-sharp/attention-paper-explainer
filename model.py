@@ -9,7 +9,7 @@ from config import DEFAULT_CONFIG
 
 # Note: no dropout. Dropout is applied to the sum of the embedding and
 # positional encoding
-class ScaledEmbeddings(nn.Module):
+class ScaledEmbedding(nn.Module):
     def __init__(self, config):
         super().__init__()
         self.d_model = config.d_model
@@ -55,9 +55,10 @@ class PositionalEncoding(nn.Module):
         self.register_buffer("pos_enc", pos_enc)
 
     def forward(self, x):
+        _, sequence_length, _ = x.shape
         # broadcasts addition over all sequences in batch
         # (batch_size, sequence_length, d_model)
-        x = x + self.pe
+        x = x + self.pos_enc[:, :sequence_length, :]
 
         return self.dropout(x)
 
@@ -86,7 +87,7 @@ class SelfAttention(nn.Module):
         self.w_k_dropout = nn.Dropout(p_dropout)
 
         # (d_model, num_heads * d_value)
-        self.w_v = nn.Linear(d_model, d_value, bias=bias)
+        self.w_v = nn.Linear(d_model, num_heads * d_value, bias=bias)
         self.w_v_dropout = nn.Dropout(p_dropout)
 
         # combines all heads
@@ -99,9 +100,8 @@ class SelfAttention(nn.Module):
         self.dropout = nn.Dropout(p_dropout)
 
     def forward(self, x):
-        batch_size = self.config.batch_size
-        sequence_length = self.config.sequence_length
-        d_model = self.config.d_model
+        batch_size, sequence_length, d_model = x.shape
+
         d_key = self.config.d_key
         d_value = self.config.d_value
         num_heads = self.config.num_heads
@@ -181,7 +181,7 @@ class SelfAttention(nn.Module):
         # scale attention scores
         x = x / math.sqrt(d_key)
         # softmax to get probabilities
-        x = functional.softmax(attention, dim=-1)
+        x = functional.softmax(x, dim=-1)
         # right here is where karpathy would insert the other dropout
 
         # multiply the attention scores by the value vectors and sum them
@@ -196,7 +196,7 @@ class SelfAttention(nn.Module):
         # of a different tensor.
         # use .contiguous to force it into being contiguous (i.e. ordered) in memory.
         # (batch_size, sequence_length, num_heads * d_value)
-        x = x.contiguous().view(batch_size, sequence_length, num_heads * d_model)
+        x = x.contiguous().view(batch_size, sequence_length, num_heads * d_value)
 
         # output projection
         # note that this has the same dimension as the original input
@@ -234,26 +234,49 @@ class FeedForward(nn.Module):
         return x
 
 
-# Copied from Karpathy's nanoGPT
 class LayerNorm(nn.Module):
-    """LayerNorm but with an optional bias. PyTorch doesn't support simply bias=False"""
+    """This is based on the equation shown in the documentation for torch.nn.LayerNorm"""
 
-    def __init__(self, config):
+    def __init__(self, config) -> None:
         super().__init__()
         d_model = config.d_model
         bias = config.bias
 
         self.layer_norm_epsilon = config.layer_norm_epsilon
 
-        self.weight = nn.Parameter(torch.ones(d_model))
-        self.bias = nn.Parameter(torch.zeros(d_model)) if bias else None
+        # initialize gamma to ones and bias to zero.
+        # this is common practice, since we want to assume that we don't need to much
+        # adjustment by default. multiplying by 1 and adding 0 don't affect the normalized values,
+        # but the parameters can change during the learning process if it helps.
+
+        # (d_model)
+        self.gamma = nn.Parameter(torch.ones(d_model))
+
+        # (d_model)
+        self.beta = nn.Parameter(torch.zeros(d_model))
 
     def forward(self, x):
-        return functional.layer_norm(
-            x, self.weight.shape, self.weight, self.bias, self.layer_norm_epsilon
-        )
+        # x is (batch_size, sequence_length, d_model)
 
+        layer_norm_epsilon = self.layer_norm_epsilon
 
+        # use keepdim to avoid squeezing the last dimension.
+        # without keepdim, would be (batch_size, sequence_length)
+        # (batch_size, sequence_length, 1)
+        mean = x.mean(dim=-1, keepdim=True)
+
+        # (batch_size, sequence_length, 1)
+        variance = x.var(dim=-1, keepdim=True)
+
+        # normalize
+        # (batch_size, sequence_length, d_model
+        x = (x - mean) / torch.sqrt(variance + layer_norm_epsilon)
+
+        # adjust
+        # (batch_size, sequence_length, d_model)
+        x = x * self.gamma + self.beta
+
+        return x
 
 
 class EncoderBlock(nn.Module):
@@ -271,17 +294,35 @@ class EncoderBlock(nn.Module):
         x = self.layer_norm_2(x)
         return x
 
+
 class Encoder(nn.Module):
     def __init__(self, config):
-        pass
+        super().__init__()
+        self.layers = nn.ModuleList(
+            [EncoderBlock(config) for _ in range(config.num_blocks)]
+        )
+        self.layer_norm = LayerNorm(config)
+
+    def forward(self, x):
+        # x is (batch_size, sequence_length, d_model)
+
+        for layer in self.layers:
+            # (batch_size, sequence_length, d_model)
+            x = layer(x)
+
+        # (batch_size, sequence_length, d_model)
+        return self.layer_norm(x)
+
 
 class DecoderBlock(nn.Module):
     def __init__(self, config):
+        super().__init__()
         pass
 
 
 class Decoder(nn.Module):
     def __init__(self, config):
+        super().__init__()
         pass
 
 
@@ -289,12 +330,17 @@ class Transformer(nn.Module):
     def __init__(self, config=DEFAULT_CONFIG):
         super().__init__()
 
-        self.source_embeddings = ScaledEmbeddings(config)
+        self.source_embedding = ScaledEmbedding(config)
         self.source_pos_enc = PositionalEncoding(config)
         self.encoder = Encoder(config)
 
-        # self.target_embeddings = ScaledEmbeddings(config)
+        # self.target_embedding = ScaledEmbedding(config)
         # self.decoder = Decoder(config)
 
     def forward(self, x):
         """training forward pass, not translation"""
+
+        x = self.source_embedding(x)
+        x = self.source_pos_enc(x)
+        x = self.encoder(x)
+        return x

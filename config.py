@@ -20,11 +20,11 @@ class BaseConfig:
 
 class ToyConfig:
     # Model params
-    sequence_length = 350  # max sentence in this config's training data is 201 tokens
+    sequence_length = 50
     num_blocks = 2  # number of blocks in decoder and encoder each
     d_model = 64
     d_ff = 256
-    num_heads = 4
+    num_heads = 2
     d_key = 16  # size of the query and key vectors for each token
     d_value = 16  # size of the value vector for each token
     p_dropout = 0.1
@@ -97,4 +97,4 @@ class BigConfig:
     adam_epsilon = 1e-9
 
 
-DEFAULT_CONFIG = SmallConfig()
+DEFAULT_CONFIG = ToyConfig()

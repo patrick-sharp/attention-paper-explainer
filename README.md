@@ -42,11 +42,7 @@ GPU instance downgraded to 64GB disk space.
 260 INT4 TOPS INT4 Precision
 16 GB GDDR6 memory
 320+ GB/s bandwidth
-
- 
- 
-Power
-70 watts
+70 watts Power draw (peak)?
 
 ## p100 specs
 3584 CUDA cores
@@ -81,3 +77,9 @@ backend specs colab
   https://colab.research.google.com/drive/1_x67fw9y5aBW72a8aGePFLlkPvKLpnBl#scrollTo=QlvkREnwN-RA
 pytorch docs
   https://pytorch.org/docs/stable/
+
+## contact me
+github
+twitter
+email
+

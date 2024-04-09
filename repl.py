@@ -3,6 +3,7 @@ import importlib
 from pathlib import Path
 import time
 import torch
+import torchinfo
 
 import train
 import model
@@ -20,12 +21,16 @@ def get_tokenizer(config=DEFAULT_CONFIG):
     return tokenizer
 
 
-def print_model():
-    print(model.Transformer())
+def print_model(config=DEFAULT_CONFIG):
+    print(model.Transformer(config))
 
 
-def sample_forward_pass():
-    pass
+def sample_forward_pass(config=DEFAULT_CONFIG):
+    transformer = model.Transformer(config)
+
+    input_size = (2, config.sequence_length)
+
+    print(torchinfo.summary(transformer, input_size=input_size, dtypes=[torch.int32]))
 
 
 def rf():
