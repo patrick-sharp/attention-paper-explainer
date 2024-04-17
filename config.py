@@ -37,17 +37,17 @@ class ToyConfig:
     bias = False  # whether or not to use a bias in linear layers and LayerNorm
 
     # Dataset params
-    num_sentence_pairs = 25000
-    huggingface_cache_dir = "dataset_cache"
+    num_sentence_pairs = 50000
+    huggingface_cache_dir = "huggingface_cache"
+    max_tokens_in_batch = 6000
 
     # Tokenizer params
-    tokenizer_batch_size = 1000
-    tokenizer_vocab_size = 8000
+    tokenizer_vocab_size = 16000
     tokenizer_path = "tokenizer.json"
-    unk_token = "[UNK]"  # unknown token, for tokens that weren't in training data
     bos_token = "[BOS]"  # beginning of sentence token
     eos_token = "[EOS]"  # end of sentence token
     pad_token = "[PAD]"  # padding token, for padding shorter sequences to the full sequence length
+    unk_token = "[UNK]"  # unknown token, for tokens that weren't in training data
 
 
 class SmallConfig:
