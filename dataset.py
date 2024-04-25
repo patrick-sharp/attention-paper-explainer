@@ -1,34 +1,32 @@
+import random
+import os
+
+from tqdm import tqdm
+
+import torch
 from datasets import load_dataset
 from tokenizers import Tokenizer
 from tokenizers.models import BPE
 from tokenizers.trainers import BpeTrainer
 from tokenizers.pre_tokenizers import Whitespace
+from tokenizers.processors import TemplateProcessing
 
 from torch.utils.data import IterableDataset
 
 from config import DEFAULT_CONFIG
 
 
-def get_dataset(config=DEFAULT_CONFIG):
-    """Returns a huggingface dataset with only the first num_sentence_pairs items"""
-    full_dataset = load_dataset(
+def get_raw_dataset(config=DEFAULT_CONFIG):
+    """Returns a huggingface dataset with only the first num_sentence_pairs items."""
+    ds = load_dataset(
         "wmt14", "de-en", split="train", cache_dir=config.huggingface_cache_dir
     )
-    return full_dataset.select(range(config.num_sentence_pairs))
+    ds = ds.select(range(config.num_sentence_pairs))
+    return ds
 
 
-def dataset_iterator(dataset):
-    for i in range(0, len(dataset)):
-        sentence_pair = dataset[i // 2]["translation"]
-        if i % 2 == 0:
-            yield sentence_pair["de"]
-        else:
-            yield sentence_pair["en"]
 
-
-def train_tokenizer(config=DEFAULT_CONFIG, dataset=None):
-    if dataset is None:
-        dataset = get_dataset(config)
+def train_tokenizer(config, dataset):
     tokenizer = Tokenizer(BPE())
     tokenizer.pre_tokenizer = Whitespace()
     trainer = BpeTrainer(
@@ -40,57 +38,181 @@ def train_tokenizer(config=DEFAULT_CONFIG, dataset=None):
             config.unk_token,
         ],
     )
+    tokenizer.post_processor = TemplateProcessing(
+        single=f"{config.bos_token} $A {config.eos_token}",
+        special_tokens=[
+            (config.bos_token, 0),
+            (config.eos_token, 1),
+            (config.pad_token, 2),
+            (config.unk_token, 3),
+        ]
+    )
+
+    def tokenizer_iterator(dataset):
+        for i in range(0, len(dataset)):
+            sentence_pair = dataset[i // 2]["translation"]
+            if i % 2 == 0:
+                yield sentence_pair["de"]
+            else:
+                yield sentence_pair["en"]
 
     tokenizer.train_from_iterator(
-        dataset_iterator(dataset),
+        tokenizer_iterator(dataset),
         trainer=trainer,
     )
     tokenizer.save(config.tokenizer_path)
-    return tokenizer, dataset
+    return tokenizer
 
 
 def load_tokenizer(config=DEFAULT_CONFIG):
     tokenizer = Tokenizer(BPE())
-    tokenizer.pre_tokenizer = Whitespace()
     return tokenizer.from_file(config.tokenizer_path)
 
 
-def get_tokenizer(config=DEFAULT_CONFIG):
+def get_tokenizer(config=DEFAULT_CONFIG, raw_dataset=None):
     if os.path.exists(config.tokenizer_path):
-        tokenizer = dataset.load_tokenizer(config)
+        tokenizer = load_tokenizer(config)
     else:
-        tokenizer = dataset.train_tokenizer(config)
+        if raw_dataset is None:
+            raw_dataset = get_raw_dataset(config)
+        tokenizer = train_tokenizer(config, raw_dataset)
     return tokenizer
 
+def get_tokenized_dataset(config=DEFAULT_CONFIG, tokenizer=None, raw_dataset=None):
+    if raw_dataset is None:
+        raw_dataset = get_raw_dataset(config)
+    if tokenizer is None:
+        tokenizer = get_tokenizer(config, raw_dataset)
 
-def DynamicBatchedDataset(IterableDataset):
-    def __init__(self, config):
-        super()
+    def tokenize_item(item):
+        de = item["translation"]["de"]
+        en = item["translation"]["en"]
+        # otherwise it shows up in the returned dict for some reason
+        del item["translation"]
+
+        de_tok = tokenizer.encode(de).ids
+        en_tok = tokenizer.encode(en).ids
+        return {
+           "de": de,
+           "en": en,
+           "de_tok": de_tok,
+           "en_tok": en_tok,
+           "length": len(de_tok) + len(en_tok)
+        }
+
+    ds = raw_dataset.map(tokenize_item)
+    ds = ds.sort("length", reverse=True)
+    return ds
+
+
+class DynamicBatchedDataset(IterableDataset):
+    def __init__(self, config=DEFAULT_CONFIG, dataset=None, tokenizer=None):
+        super().__init__()
+        self.config = config
         max_tokens_in_batch = config.max_tokens_in_batch
 
-        self.config = config
-        self.dataset = get_dataset(config)
-        self.tokenizer = get_tokenizer(config, self.dataset)
-
-        tokenized = [None] * len(ds)
-        for i, item in tqdm(enumerate(ds)):
-            sentence_pair = item["translation"]
-            tokenized[i] = {
-                "de": tokenizer.encode(sentence_pair["de"]).ids,
-                "en": tokenizer.encode(sentence_pair["en"]).ids,
-            }
-
-        def token_sum(tokenized_pair):
-            de_tokens = len(tokenized_pair["de"])
-            en_tokens = len(tokenized_pair["en"])
-            return de_tokens + en_tokens
-
-        tokenized.sort(key=token_sum)
+        if dataset is None or tokenizer is None:
+            raw_dataset = get_raw_dataset(config)
+            self.tokenizer = get_tokenizer(config, raw_dataset)
+            self.dataset = get_tokenized_dataset(config, self.tokenizer, raw_dataset)
+        else:
+            self.tokenizer = tokenizer
+            self.dataset = dataset
 
         batches = []
-        batch_total_tokens = 0
-        #for tokenized_pair in tokenized:
+        batch_start = 0
+        max_len_de = 0
+        max_len_en = 0
+        batch_tokens = 0
+        for i, item in enumerate(self.dataset):
+            if batch_tokens + item["length"] <= max_tokens_in_batch:
+                max_len_de = max(max_len_de, len(item["de"]))
+                max_len_en = max(max_len_en, len(item["en"]))
+                batch_tokens += item["length"]
+            else:
+                batches.append({
+                    "start": batch_start,
+                    "end": i,
+                    "max_len_de": max_len_de,
+                    "max_len_en": max_len_en,
+                })
+                batch_start = i
+                max_len_de = len(item["de"])
+                max_len_en = len(item["en"])
+                batch_tokens = item["length"]
+        # unless the last sentence pairs in the dataset happen to be exactly
+        # the right number of tokens, we need to make them into a final 
+        # smaller batch
+        if batches[-1]["end"] != len(self.dataset):
+            batches.append({
+                "start": batch_start,
+                "end": i,
+                "max_len_de": max_len_de,
+                "max_len_en": max_len_en,
+            })
 
+        random.shuffle(batches)
+        self.batches = batches
+
+    def dynamic_batch_generator(self):
+        pad_token = self.config.pad_token
+        pad_token_id = self.tokenizer.token_to_id(pad_token)
+        for batch in self.batches:
+            batch_range = range(batch["start"], batch["end"])
+            items = [self.dataset[i] for i in batch_range]
+            enc_seq_len = batch["max_len_de"]
+            dec_seq_len = batch["max_len_en"]
+            de_padded = []
+            en_padded = []
+
+            def pad(tokens, length):
+                num_pad = length - len(tokens) 
+                return tokens + [pad_token_id] * num_pad
+
+            for item in items:
+                de_padded.append(pad(item["de_tok"], enc_seq_len))
+                en_padded.append(pad(item["en_tok"], dec_seq_len))
+
+            # (batch_size, enc_seq_len)
+            encoder_input = torch.tensor(de_padded)
+
+            # (batch_size, dec_seq_len)
+            decoder_input = torch.tensor(en_padded)
+
+            # (batch_size, enc_seq_len)
+            encoder_mask = (encoder_input != pad_token_id).int()
+
+            # (batch_size, dec_seq_len)
+            decoder_pad_mask = (decoder_input != pad_token_id).int()
+
+            batch_size = batch["end"] - batch["start"]
+            causal_mask_shape = (batch_size, dec_seq_len, dec_seq_len)
+
+            # (batch_size, dec_seq_len, dec_seq_len)
+            # only allows attention to past tokens
+            # e.g. 
+            # [[[0., 1., 1.],
+            #   [0., 0., 1.],
+            #   [0., 0., 0.]]]
+            decoder_causal_mask = torch.triu(torch.ones(causal_mask_shape), diagonal=1).int()
+
+            # (batch_size, 1, dec_seq_len)
+            decoder_pad_mask = decoder_pad_mask.unsqueeze(1)
+
+            # (batch_size, dec_seq_len, dec_seq_len)
+            decoder_mask = decoder_pad_mask & decoder_causal_mask
+
+            yield {
+                "encoder_input": encoder_input,
+                "decoder_input": decoder_input,
+                "encoder_mask": encoder_mask,
+                "decoder_mask": decoder_mask,
+                # remove the eos token from the decoder input to get the labels
+                "label": decoder_input[:,1:],
+                # not used by the model, just used to show progress during training
+                "decoder_text": [item["de"] for item in items],
+                "encoder_text": [item["en"] for item in items],
+            }
 
     def __iter__(self):
-        pass
+        return self.dynamic_batch_generator()

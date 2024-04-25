@@ -1,4 +1,4 @@
 __pycache__
-dataset_cache
+huggingface_cache
 env
 tokenizer.json

@@ -337,10 +337,10 @@ class Transformer(nn.Module):
         # self.target_embedding = ScaledEmbedding(config)
         # self.decoder = Decoder(config)
 
-    def forward(self, x):
+    def forward(self, encoder_input, decoder_input, encoder_mask, decoder_mask):
         """training forward pass, not translation"""
 
-        x = self.source_embedding(x)
+        x = self.source_embedding(encoder_input)
         x = self.source_pos_enc(x)
-        x = self.encoder(x)
+        x = self.encoder(x, encoder_mask)
         return x
