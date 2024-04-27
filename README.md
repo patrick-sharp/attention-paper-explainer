@@ -71,6 +71,11 @@ how to train a huggingface tokenizer
 dataset
   https://huggingface.co/datasets/wmt14/viewer/de-en
   https://www.statmt.org/wmt14/translation-task.html
+    commoncrawl.de-en
+    europarl-v7.de-en
+    news-commentary-v9.de-en.
+The annotated transformer
+  https://nlp.seas.harvard.edu/annotated-transformer/
 
 ## Useful links
 backend specs colab

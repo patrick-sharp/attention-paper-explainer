@@ -39,7 +39,7 @@ class ToyConfig:
     # Dataset params
     num_sentence_pairs = 50000
     huggingface_cache_dir = "huggingface_cache"
-    max_tokens_in_batch = 6000
+    max_tokens_in_batch = 25000
 
     # Tokenizer params
     tokenizer_vocab_size = 16000

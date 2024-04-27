@@ -13,33 +13,62 @@ import dataset
 
 from config import DEFAULT_CONFIG, BaseConfig, ToyConfig, SmallConfig, BigConfig
 
-
-def tokenize_all(config=DEFAULT_CONFIG):
-    ds = dataset.get_dataset(config)
-    if os.path.exists(config.tokenizer_path):
-        tokenizer = dataset.load_tokenizer(config)
-    else:
-        tokenizer = dataset.train_tokenizer(config, ds)
-
-    tokenized = [None] * len(ds)
-    for i, item in tqdm(enumerate(ds)):
-        sentence_pair = item["translation"]
-        tokenized[i] = {
-            "de": tokenizer.encode(sentence_pair["de"]),
-            "en": tokenizer.encode(sentence_pair["en"]),
-        }
-    return tokenized, ds
+raw = None  # raw dataset
+tok = None  # tokenizer
+ds = None  # dataset tokenized and sorted
+dbd = None  # dataset batched for model training
+tf = None  # transformer model
 
 
-def gimme_data(config=DEFAULT_CONFIG):
-    return dataset.DynamicBatchedDataset(config)
+# import any changes in the project into the repl
+def rf():
+    importlib.reload(train)
+    importlib.reload(model)
+    importlib.reload(dataset)
 
 
-def print_model(config=DEFAULT_CONFIG):
-    print(model.Transformer(config))
+# initialize raw dataset
+def iraw(config=DEFAULT_CONFIG):
+    global raw
+    raw = dataset.get_raw_dataset(config)
 
 
-def sample_forward_pass(config=DEFAULT_CONFIG):
+# initialize tokenizer
+# will retrieve from cache if tokenizer json file exists
+def itok(config=DEFAULT_CONFIG):
+    global tok
+    if raw is None:
+        iraw(config)
+    tok = dataset.get_tokenizer(config, raw)
+
+
+# tokenize and sort dataset
+def ids(config=DEFAULT_CONFIG):
+    global ds
+    if tok is None:
+        itok(config)
+    ds = dataset.get_tokenized_dataset(config, tok, raw)
+
+
+# initialize dynamic batched dataset
+def idbd(config=DEFAULT_CONFIG):
+    global dbd
+    if ds is None:
+        ids(config)
+    dbd = dataset.DynamicBatchedDataset(config, ds, tok)
+
+
+# initialize transformer model
+def itf(config=DEFAULT_CONFIG):
+    global tf
+    if dbd is None:
+        idbd(config)
+    tf = model.Transformer()
+    print(tf)
+
+
+# sample forward pass for the model
+def fp(config=DEFAULT_CONFIG):
     transformer = model.Transformer(config)
 
     input_size = (2, config.sequence_length)
@@ -47,10 +76,4 @@ def sample_forward_pass(config=DEFAULT_CONFIG):
     print(torchinfo.summary(transformer, input_size=input_size, dtypes=[torch.int32]))
 
 
-def rf():
-    importlib.reload(train)
-    importlib.reload(model)
-    importlib.reload(dataset)
-
-# TODO: repl state for better incremental developement
 # TODO: see if you can repro EOS at the beginning of tokenized input
