@@ -1,6 +1,7 @@
 import os
 import importlib
 from pathlib import Path
+import random
 import time
 import torch
 import torchinfo
@@ -10,14 +11,17 @@ import train
 import model
 import dataset
 
-
 from config import DEFAULT_CONFIG, BaseConfig, ToyConfig, SmallConfig, BigConfig
 
+config = DEFAULT_CONFIG
 raw = None  # raw dataset
 tok = None  # tokenizer
 ds = None  # dataset tokenized and sorted
 dbd = None  # dataset batched for model training
 tf = None  # transformer model
+
+random.seed(config.random_seed)
+torch.manual_seed(config.random_seed)
 
 
 # import any changes in the project into the repl
@@ -28,38 +32,38 @@ def rf():
 
 
 # initialize raw dataset
-def iraw(config=DEFAULT_CONFIG):
+def iraw():
     global raw
     raw = dataset.get_raw_dataset(config)
 
 
 # initialize tokenizer
 # will retrieve from cache if tokenizer json file exists
-def itok(config=DEFAULT_CONFIG):
+def itok():
     global tok
     if raw is None:
-        iraw(config)
+        iraw()
     tok = dataset.get_tokenizer(config, raw)
 
 
 # tokenize and sort dataset
-def ids(config=DEFAULT_CONFIG):
+def ids():
     global ds
     if tok is None:
-        itok(config)
+        itok()
     ds = dataset.get_tokenized_dataset(config, tok, raw)
 
 
 # initialize dynamic batched dataset
-def idbd(config=DEFAULT_CONFIG):
+def idbd():
     global dbd
     if ds is None:
-        ids(config)
+        ids()
     dbd = dataset.DynamicBatchedDataset(config, ds, tok)
 
 
 # initialize transformer model
-def itf(config=DEFAULT_CONFIG):
+def itf():
     global tf
     if dbd is None:
         idbd(config)
@@ -68,9 +72,17 @@ def itf(config=DEFAULT_CONFIG):
 
 
 # sample forward pass for the model
-def fp(config=DEFAULT_CONFIG):
+def fp(idx=0):
+    if dbd is None:
+        idbd()
+
     transformer = model.Transformer(config)
 
-    input_size = (2, config.sequence_length)
+    input_data = [
+        dbd[idx]["encoder_input"],
+        dbd[idx]["decoder_input"],
+        dbd[idx]["source_mask"],
+        dbd[idx]["target_mask"],
+    ]
 
-    print(torchinfo.summary(transformer, input_size=input_size, dtypes=[torch.int32]))
+    print(torchinfo.summary(transformer, input_data=input_data, dtypes=[torch.int32]))

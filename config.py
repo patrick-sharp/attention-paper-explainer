@@ -19,8 +19,10 @@ class BaseConfig:
 
 
 class ToyConfig:
+    random_seed = 0
+
     # Model params
-    sequence_length = 50
+    max_sequence_length = 1500  # only used for translation, not training
     num_blocks = 2  # number of blocks in decoder and encoder each
     d_model = 64
     d_ff = 256
@@ -42,7 +44,7 @@ class ToyConfig:
     max_tokens_in_batch = 25000
 
     # Tokenizer params
-    tokenizer_vocab_size = 16000
+    tokenizer_vocab_size = 8000
     tokenizer_path = "tokenizer.json"
     bos_token = "[BOS]"  # beginning of sentence token
     eos_token = "[EOS]"  # end of sentence token

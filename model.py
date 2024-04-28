@@ -24,13 +24,13 @@ class PositionalEncoding(nn.Module):
         super().__init__()
         self.dropout = nn.Dropout(config.p_dropout)
 
-        # (sequence_length, d_model)
-        pos_enc = torch.zeros(config.sequence_length, config.d_model)
+        # (max_sequence_length, d_model)
+        positional_encodings = torch.zeros(config.max_sequence_length, config.d_model)
 
-        # (sequence_length)
-        position = torch.arange(0, config.sequence_length, dtype=torch.float)
+        # (max_sequence_length)
+        position = torch.arange(0, config.max_sequence_length, dtype=torch.float)
 
-        # (sequence_length, 1)
+        # (max_sequence_length, 1)
         position = position.unsqueeze(1)
 
         # (d_model / 2)
@@ -43,27 +43,27 @@ class PositionalEncoding(nn.Module):
         denominator = torch.pow(torch.ones(config.d_model // 2) * 10000.0, exponent)
 
         # sine even indices
-        pos_enc[:, 0::2] = torch.sin(position / denominator)
+        positional_encodings[:, 0::2] = torch.sin(position / denominator)
 
         # cosine odd indices
-        pos_enc[:, 1::2] = torch.cos(position / denominator)
+        positional_encodings[:, 1::2] = torch.cos(position / denominator)
 
-        # (1, sequence_length, d_model)
-        pos_enc = pos_enc.unsqueeze(0)
+        # (1, max_sequence_length, d_model)
+        positional_encodings = positional_encodings.unsqueeze(0)
 
         # Register the positional encoding as a buffer
-        self.register_buffer("pos_enc", pos_enc)
+        self.register_buffer("positional_encodings", positional_encodings)
 
     def forward(self, x):
         _, sequence_length, _ = x.shape
         # broadcasts addition over all sequences in batch
         # (batch_size, sequence_length, d_model)
-        x = x + self.pos_enc[:, :sequence_length, :]
+        x = x + self.positional_encodings[:, :sequence_length, :]
 
         return self.dropout(x)
 
 
-class SelfAttention(nn.Module):
+class MultiHeadAttention(nn.Module):
     def __init__(self, config):
         super().__init__()
 
@@ -99,8 +99,24 @@ class SelfAttention(nn.Module):
         # not sure why there's a difference, but there you go.
         self.dropout = nn.Dropout(p_dropout)
 
-    def forward(self, x):
-        batch_size, sequence_length, d_model = x.shape
+    def forward(self, query, key, value, mask):
+        # For encoder self attention:
+        # query, key, and value are all the same
+        # mask is the source mask
+        #   (batch_size, 1, 1, sequence_length)
+
+        # For decoder masked self attention:
+        # query, key, and value are all the same
+        # mask is the target mask
+        #   (batch_size, 1, sequence_length, sequence_length)
+
+        # For decoder cross attention:
+        # query and key are the same (the encoder output)
+        # value is the input from the previous sublayer
+        # mask is the source mask
+        #   (batch_size, 1, 1, sequence_length)
+
+        batch_size, sequence_length, d_model = query.shape
 
         d_key = self.config.d_key
         d_value = self.config.d_value
@@ -110,16 +126,17 @@ class SelfAttention(nn.Module):
 
         # calculate the queries, keys, and values for all heads at once
         # INTERMISSION: learn about the rules for batched matrix multiplies
-        #     in torch.matmul
+        # https://pytorch.org/docs/stable/notes/broadcasting.html#broadcasting-semantics
+        # https://pytorch.org/docs/stable/generated/torch.matmul.html
 
         # (batch_size, sequence_length, num_heads * d_key)
-        q = self.w_q(x)
+        q = self.w_q(query)
 
         # (batch_size, sequence_length, num_heads * d_key)
-        k = self.w_k(x)
+        k = self.w_k(key)
 
         # (batch_size, sequence_length, num_heads * d_value)
-        v = self.w_v(x)
+        v = self.w_v(value)
 
         # we want all the queries * all the keys (dot prod) for each head
         # we want (batch_size, num_heads, sequence_length, sequence_length
@@ -180,6 +197,8 @@ class SelfAttention(nn.Module):
         x = q @ kT
         # scale attention scores
         x = x / math.sqrt(d_key)
+        # mask so that the model won't pay attention to padding
+        x.masked_fill_(mask, -math.inf)
         # softmax to get probabilities
         x = functional.softmax(x, dim=-1)
         # right here is where karpathy would insert the other dropout
@@ -282,14 +301,16 @@ class LayerNorm(nn.Module):
 class EncoderBlock(nn.Module):
     def __init__(self, config):
         super().__init__()
-        self.attention = SelfAttention(config)
+        self.attention = MultiHeadAttention(config)
         self.layer_norm_1 = LayerNorm(config)
+
         self.feed_forward = FeedForward(config)
         self.layer_norm_2 = LayerNorm(config)
 
-    def forward(self, x):
-        x = self.attention(x)
+    def forward(self, x, mask):
+        x = self.attention(x, x, x, mask)
         x = self.layer_norm_1(x)
+
         x = self.feed_forward(x)
         x = self.layer_norm_2(x)
         return x
@@ -298,32 +319,76 @@ class EncoderBlock(nn.Module):
 class Encoder(nn.Module):
     def __init__(self, config):
         super().__init__()
-        self.layers = nn.ModuleList(
-            [EncoderBlock(config) for _ in range(config.num_blocks)]
-        )
-        self.layer_norm = LayerNorm(config)
+        blocks = [EncoderBlock(config) for _ in range(config.num_blocks)]
+        self.layers = nn.ModuleList(blocks)
 
-    def forward(self, x):
+    def forward(self, x, mask):
         # x is (batch_size, sequence_length, d_model)
+        # mask is (batch_size, 1, 1, sequence_length)
 
         for layer in self.layers:
             # (batch_size, sequence_length, d_model)
-            x = layer(x)
+            x = layer(x, mask)
 
-        # (batch_size, sequence_length, d_model)
-        return self.layer_norm(x)
+        return x
 
 
 class DecoderBlock(nn.Module):
     def __init__(self, config):
         super().__init__()
-        pass
+        self.causal_attention = MultiHeadAttention(config)
+        self.layer_norm_1 = LayerNorm(config)
+
+        self.cross_attention = MultiHeadAttention(config)
+        self.layer_norm_2 = LayerNorm(config)
+
+        self.feed_forward = FeedForward(config)
+        self.layer_norm_3 = LayerNorm(config)
+
+    def forward(self, x, encoder_output, source_mask, target_mask):
+        x = self.causal_attention(x, x, x, target_mask)
+        x = self.layer_norm_1(x)
+
+        x = self.cross_attention(encoder_output, encoder_output, x, source_mask)
+        x = self.layer_norm_1(x)
+
+        x = self.feed_forward(x)
+        x = self.layer_norm_3(x)
+        return x
 
 
 class Decoder(nn.Module):
     def __init__(self, config):
         super().__init__()
-        pass
+        blocks = [DecoderBlock(config) for _ in range(config.num_blocks)]
+        self.layers = nn.ModuleList(blocks)
+
+    def forward(self, x, encoder_output, source_mask, target_mask):
+        # x is (batch_size, sequence_length, d_model)
+        # source_mask is (batch_size, 1, 1, sequence_length)
+        # target_mask is (batch_size, 1, sequence_length, sequence_length)
+
+        for layer in self.layers:
+            # (batch_size, sequence_length, d_model)
+            x = layer(x, encoder_output, source_mask, target_mask)
+
+        return x
+
+
+class ProjectionLayer(nn.Module):
+    def __init__(self, config):
+        super().__init__()
+        d_model = config.d_model
+        tokenizer_vocab_size = config.tokenizer_vocab_size
+        bias = config.bias
+
+        self.linear = nn.Linear(d_model, tokenizer_vocab_size, bias=bias)
+
+    def forward(self, x):
+        # x is (batch_size, sequence_length, d_model)
+
+        # (batch_size, sequence_length, tokenizer_vocab_size)
+        return self.linear(x)
 
 
 class Transformer(nn.Module):
@@ -331,16 +396,30 @@ class Transformer(nn.Module):
         super().__init__()
 
         self.source_embedding = ScaledEmbedding(config)
-        self.source_pos_enc = PositionalEncoding(config)
+        self.positional_encoding = PositionalEncoding(config)
         self.encoder = Encoder(config)
 
-        # self.target_embedding = ScaledEmbedding(config)
-        # self.decoder = Decoder(config)
+        self.target_embedding = ScaledEmbedding(config)
+        self.decoder = Decoder(config)
 
-    def forward(self, encoder_input, decoder_input, encoder_mask, decoder_mask):
-        """training forward pass, not translation"""
+        self.projection_layer = ProjectionLayer(config)
+
+    def forward(self, encoder_input, decoder_input, source_mask, target_mask):
+        """training forward pass, not translation.
+        encoder_input: (batch_size, sequence_length, d_model)
+        decoder_input: (batch_size, sequence_length, d_model)
+        source_mask:  (batch_size, 1, 1, sequence_length)
+        target_mask:  (batch_size, 1, sequence_length, sequence_length)
+        """
 
         x = self.source_embedding(encoder_input)
-        x = self.source_pos_enc(x)
-        x = self.encoder(x, encoder_mask)
+        x = self.positional_encoding(x)
+        x = self.encoder(x, source_mask)
+
+        encoder_output = x
+        x = self.source_embedding(decoder_input)
+        x = self.positional_encoding(x)
+        x = self.decoder(x, encoder_output, source_mask, target_mask)
+
+        x = self.projection_layer(x)
         return x

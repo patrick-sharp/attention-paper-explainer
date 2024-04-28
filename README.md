@@ -76,12 +76,19 @@ dataset
     news-commentary-v9.de-en.
 The annotated transformer
   https://nlp.seas.harvard.edu/annotated-transformer/
+Smart batching tutorial
+  https://mccormickml.com/2020/07/29/smart-batching-tutorial/#s4-smart-batching
 
 ## Useful links
 backend specs colab
   https://colab.research.google.com/drive/1_x67fw9y5aBW72a8aGePFLlkPvKLpnBl#scrollTo=QlvkREnwN-RA
 pytorch docs
   https://pytorch.org/docs/stable/
+
+## Specific torch docs
+https://pytorch.org/docs/stable/notes/broadcasting.html#broadcasting-semantics
+https://pytorch.org/docs/stable/generated/torch.matmul.html
+
 
 ## contact me
 github

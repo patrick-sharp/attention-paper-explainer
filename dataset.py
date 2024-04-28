@@ -86,6 +86,8 @@ def get_tokenized_dataset(config, tokenizer, raw_dataset):
 
         de_tok = tokenizer.encode(de).ids
         en_tok = tokenizer.encode(en).ids
+        assert len(de_tok) <= config.max_sequence_length
+        assert len(en_tok) <= config.max_sequence_length
         return {
             "de": de,
             "en": en,
@@ -102,7 +104,8 @@ def get_tokenized_dataset(config, tokenizer, raw_dataset):
 class DynamicBatchedDataset(IterableDataset):
     def __init__(self, config, dataset, tokenizer):
         """Compute where each batch starts and ends in the dataset, and what
-        sequence length each batch should have"""
+        sequence length each batch should have.
+        Stores this in self.batch_shapes"""
         super().__init__()
         self.config = config
         max_tokens_in_batch = config.max_tokens_in_batch
@@ -110,54 +113,45 @@ class DynamicBatchedDataset(IterableDataset):
         self.tokenizer = tokenizer
         self.dataset = dataset
 
-        batches = []
+        batch_shapes = []
         batch_start = 0
-        max_len_de = 0
-        max_len_en = 0
+        max_len = 0  # this is the maximum length of either de or en
 
         print("BATCHING DATA")
         i = 0
 
         def append_batch():
-            batches.append(
+            batch_shapes.append(
                 {
                     "start": batch_start,  # inclusive bound
                     "end": i,  # exclusive bound
-                    "max_len_de": max_len_de,
-                    "max_len_en": max_len_en,
+                    "max_len": max_len,
                 }
             )
 
         for i in tqdm(range(len(self.dataset))):
             item = self.dataset[i]
-            new_max_len_de = max(max_len_de, len(item["de"]))
-            new_max_len_en = max(max_len_en, len(item["en"]))
+            new_max_len = max(max_len, len(item["de"]), len(item["en"]))
 
-            de_exceeds = new_max_len_de * (i - batch_start + 1) > max_tokens_in_batch
-            en_exceeds = new_max_len_en * (i - batch_start + 1) > max_tokens_in_batch
-
-            if de_exceeds or en_exceeds:
+            if new_max_len * (i - batch_start + 1) > max_tokens_in_batch:
                 append_batch()
                 batch_start = i
-                max_len_de = len(item["de"])
-                max_len_en = len(item["en"])
+                max_len = max(len(item["de"]), len(item["en"]))
             else:
-                max_len_de = new_max_len_de
-                max_len_en = new_max_len_en
+                max_len = new_max_len
         # unless the last sentence pairs in the dataset happen to be exactly
         # the right number of tokens, we need to make them into a final
         # smaller batch
-        if batches[-1]["end"] != len(self.dataset):
+        if batch_shapes[-1]["end"] != len(self.dataset):
             append_batch()
 
-        random.shuffle(batches)
-        self.batches = batches
+        random.shuffle(batch_shapes)
+        self.batch_shapes = batch_shapes
 
     def pad_batch(self, batch):
         start = batch["start"]
         end = batch["end"]
-        enc_seq_len = batch["max_len_de"]
-        dec_seq_len = batch["max_len_en"]
+        sequence_length = batch["max_len"]
         batch_size = end - start
 
         pad_token = self.config.pad_token
@@ -171,58 +165,72 @@ class DynamicBatchedDataset(IterableDataset):
             return tokens + [pad_token_id] * num_pad
 
         for item in items:
-            de_padded.append(pad(item["de_tok"], enc_seq_len))
-            en_padded.append(pad(item["en_tok"], dec_seq_len))
+            de_padded.append(pad(item["de_tok"], sequence_length))
+            en_padded.append(pad(item["en_tok"], sequence_length))
 
-        # (batch_size, enc_seq_len)
+        # (batch_size, sequence_length)
         encoder_input = torch.tensor(de_padded)
 
-        # (batch_size, dec_seq_len)
+        # (batch_size, sequence_length)
         decoder_input = torch.tensor(en_padded)
 
-        # (batch_size, enc_seq_len)
-        encoder_mask = (encoder_input != pad_token_id).int()
+        # true for padding, false for non-padding
+        # (batch_size, sequence_length)
+        source_mask = encoder_input == pad_token_id
 
-        # (batch_size, dec_seq_len)
-        decoder_pad_mask = (decoder_input != pad_token_id).int()
+        # (batch_size, 1, 1, sequence_length)
+        # this allows us to mask all heads of attention at once later
+        source_mask = source_mask.unsqueeze(1).unsqueeze(1)
 
-        causal_mask_shape = (batch_size, dec_seq_len, dec_seq_len)
+        # (batch_size, sequence_length)
+        # true for padding, false for non-padding
+        target_pad_mask = decoder_input == pad_token_id
 
-        # (batch_size, dec_seq_len, dec_seq_len)
+        causal_mask_shape = (
+            batch_size,
+            1,
+            sequence_length,
+            sequence_length,
+        )
+
+        # (batch_size, 1, sequence_length, sequence_length
         # only allows attention to past tokens
         # e.g.
-        # [[[0., 1., 1.],
-        #   [0., 0., 1.],
-        #   [0., 0., 0.]]]
-        decoder_causal_mask = torch.triu(
-            torch.ones(causal_mask_shape), diagonal=1
-        ).int()
+        # [[[[False., True.,  True.],
+        #    [False., False., True.],
+        #    [False., False., False.]]]]
+        target_causal_mask = torch.triu(
+            torch.ones(causal_mask_shape, dtype=torch.bool), diagonal=1
+        )
 
-        # (batch_size, 1, dec_seq_len)
-        decoder_pad_mask = decoder_pad_mask.unsqueeze(1)
+        # (batch_size, 1, 1, sequence_length)
+        target_pad_mask = target_pad_mask.unsqueeze(1).unsqueeze(1)
 
-        # (batch_size, dec_seq_len, dec_seq_len)
-        decoder_mask = decoder_pad_mask & decoder_causal_mask
+        # (batch_size, 1, sequence_length, sequence_length)
+        target_mask = target_pad_mask & target_causal_mask
 
         return {
             "encoder_input": encoder_input,
             "decoder_input": decoder_input,
-            "encoder_mask": encoder_mask,
-            "decoder_mask": decoder_mask,
+            "source_mask": source_mask,
+            "target_mask": target_mask,
             # remove the eos token from the decoder input to get the labels
             "label": decoder_input[:, 1:],
-            # not used by the model, just used to show progress during training
+            # not used by the model. used to show progress during training
             "decoder_text": [item["de"] for item in items],
             "encoder_text": [item["en"] for item in items],
         }
 
+    def __len__(self):
+        return len(self.batch_shapes)
+
     def __getitem__(self, idx):
         """Get the idx'th batch of the dataset"""
-        return self.pad_batch(self.batches[idx])
+        return self.pad_batch(self.batch_shapes[idx])
 
     def dynamic_batch_generator(self):
         """Generator for implementing the iterable protocol"""
-        for batch in self.batches:
+        for batch in self.batch_shapes:
             yield self.pad_batch(batch)
 
     def __iter__(self):
