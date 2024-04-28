@@ -74,6 +74,3 @@ def fp(config=DEFAULT_CONFIG):
     input_size = (2, config.sequence_length)
 
     print(torchinfo.summary(transformer, input_size=input_size, dtypes=[torch.int32]))
-
-
-# TODO: see if you can repro EOS at the beginning of tokenized input
