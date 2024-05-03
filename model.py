@@ -13,7 +13,7 @@ class ScaledEmbedding(nn.Module):
     def __init__(self, config):
         super().__init__()
         self.d_model = config.d_model
-        self.embedding = nn.Embedding(config.tokenizer_vocab_size, config.d_model)
+        self.embedding = nn.Embedding(config.vocab_size, config.d_model)
 
     def forward(self, x):
         return self.embedding(x) * math.sqrt(self.d_model)
@@ -379,20 +379,23 @@ class ProjectionLayer(nn.Module):
     def __init__(self, config):
         super().__init__()
         d_model = config.d_model
-        tokenizer_vocab_size = config.tokenizer_vocab_size
+        vocab_size = config.vocab_size
         bias = config.bias
 
-        self.linear = nn.Linear(d_model, tokenizer_vocab_size, bias=bias)
+        self.linear = nn.Linear(d_model, vocab_size, bias=bias)
 
     def forward(self, x):
         # x is (batch_size, sequence_length, d_model)
 
-        # (batch_size, sequence_length, tokenizer_vocab_size)
+        # Note that we don't apply softmax here. The loss functions used in training
+        # expect un-normalized logits
+
+        # (batch_size, sequence_length, vocab_size)
         return self.linear(x)
 
 
 class Transformer(nn.Module):
-    def __init__(self, config=DEFAULT_CONFIG):
+    def __init__(self, config):
         super().__init__()
 
         self.source_embedding = ScaledEmbedding(config)

@@ -19,7 +19,7 @@ class BaseConfig:
 
 
 class ToyConfig:
-    random_seed = 0
+    random_seed = 0  # used for python standard lib and for pytorch
 
     # Model params
     max_sequence_length = 1500  # only used for translation, not training
@@ -30,22 +30,29 @@ class ToyConfig:
     d_key = 16  # size of the query and key vectors for each token
     d_value = 16  # size of the value vector for each token
     p_dropout = 0.1
-    train_steps = 1e4  # also called the number of epochs
+    bias = False  # whether or not to use a bias in linear layers and LayerNorm
+
+    # model training params
+    train_steps = 10_000  # also called the number of epochs
+    adam_learning_rate = 1e-4
     adam_beta_1 = 0.9
     adam_beta_2 = 0.98
     adam_epsilon = 1e-9
     layer_norm_epsilon = 1e-5
     label_smoothing_epsilon = 0.1
-    bias = False  # whether or not to use a bias in linear layers and LayerNorm
+    # model_weights_folder = "model_weights"
 
     # Dataset params
     num_sentence_pairs = 50000
     huggingface_cache_dir = "huggingface_cache"
+    raw_dataset_filename = "raw_dataset.pkl"
+    ragged_dataset_filename = "ragged_dataset.pkl"
+    batched_dataset_filename = "batched_dataset.pkl"
     max_tokens_in_batch = 25000
 
     # Tokenizer params
-    tokenizer_vocab_size = 8000
-    tokenizer_path = "tokenizer.json"
+    vocab_size = 8000
+    tokenizer_filename = "tokenizer.json"
     bos_token = "[BOS]"  # beginning of sentence token
     eos_token = "[EOS]"  # end of sentence token
     pad_token = "[PAD]"  # padding token, for padding shorter sequences to the full sequence length

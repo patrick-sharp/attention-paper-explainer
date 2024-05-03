@@ -14,7 +14,7 @@ from tokenizers.processors import TemplateProcessing
 from torch.utils.data import IterableDataset
 
 
-def get_raw_dataset(config):
+def raw_dataset(config):
     """Returns a huggingface dataset with only the first num_sentence_pairs items."""
     ds = load_dataset(
         "wmt14", "de-en", split="train", cache_dir=config.huggingface_cache_dir
@@ -27,7 +27,7 @@ def train_tokenizer(config, dataset):
     tokenizer = Tokenizer(BPE())
     tokenizer.pre_tokenizer = Whitespace()
     trainer = BpeTrainer(
-        vocab_size=config.tokenizer_vocab_size,
+        vocab_size=config.vocab_size,
         special_tokens=[
             config.bos_token,
             config.eos_token,
@@ -57,26 +57,10 @@ def train_tokenizer(config, dataset):
         tokenizer_iterator(dataset),
         trainer=trainer,
     )
-    tokenizer.save(config.tokenizer_path)
     return tokenizer
 
 
-def load_tokenizer(config):
-    tokenizer = Tokenizer(BPE())
-    return tokenizer.from_file(config.tokenizer_path)
-
-
-def get_tokenizer(config, raw_dataset):
-    if os.path.exists(config.tokenizer_path):
-        tokenizer = load_tokenizer(config)
-    else:
-        if raw_dataset is None:
-            raw_dataset = get_raw_dataset(config)
-        tokenizer = train_tokenizer(config, raw_dataset)
-    return tokenizer
-
-
-def get_tokenized_dataset(config, tokenizer, raw_dataset):
+def tokenize_dataset(config, raw_dataset, tokenizer):
     def tokenize_item(item):
         de = item["translation"]["de"]
         en = item["translation"]["en"]
@@ -101,23 +85,23 @@ def get_tokenized_dataset(config, tokenizer, raw_dataset):
     return ds
 
 
-class DynamicBatchedDataset(IterableDataset):
-    def __init__(self, config, dataset, tokenizer):
+class BatchedDataset(IterableDataset):
+    def __init__(self, config, tokenizer, tokenized_dataset):
         """Compute where each batch starts and ends in the dataset, and what
         sequence length each batch should have.
-        Stores this in self.batch_shapes"""
+        Store this in self.batch_shapes"""
         super().__init__()
         self.config = config
         max_tokens_in_batch = config.max_tokens_in_batch
 
         self.tokenizer = tokenizer
-        self.dataset = dataset
+        self.tokenized_dataset = tokenized_dataset
 
         batch_shapes = []
         batch_start = 0
         max_len = 0  # this is the maximum length of either de or en
 
-        print("BATCHING DATA")
+        print("Batching data...")
         i = 0
 
         def append_batch():
@@ -129,8 +113,8 @@ class DynamicBatchedDataset(IterableDataset):
                 }
             )
 
-        for i in tqdm(range(len(self.dataset))):
-            item = self.dataset[i]
+        for i in tqdm(range(len(self.tokenized_dataset))):
+            item = self.tokenized_dataset[i]
             new_max_len = max(max_len, len(item["de"]), len(item["en"]))
 
             if new_max_len * (i - batch_start + 1) > max_tokens_in_batch:
@@ -142,7 +126,7 @@ class DynamicBatchedDataset(IterableDataset):
         # unless the last sentence pairs in the dataset happen to be exactly
         # the right number of tokens, we need to make them into a final
         # smaller batch
-        if batch_shapes[-1]["end"] != len(self.dataset):
+        if batch_shapes[-1]["end"] != len(self.tokenized_dataset):
             append_batch()
 
         random.shuffle(batch_shapes)
@@ -156,7 +140,7 @@ class DynamicBatchedDataset(IterableDataset):
 
         pad_token = self.config.pad_token
         pad_token_id = self.tokenizer.token_to_id(pad_token)
-        items = [self.dataset[i] for i in range(start, end)]
+        items = [self.tokenized_dataset[i] for i in range(start, end)]
         de_padded = []
         en_padded = []
 
@@ -209,13 +193,22 @@ class DynamicBatchedDataset(IterableDataset):
         # (batch_size, 1, sequence_length, sequence_length)
         target_mask = target_pad_mask & target_causal_mask
 
+        # get rid of the bos token for the labels
+        # (batch_size, sequence_length)
+        label = decoder_input.roll(-1, 1)
+        label[:, -1] = pad_token_id
+
         return {
+            # (batch_size, sequence_length)
             "encoder_input": encoder_input,
+            # (batch_size, sequence_length)
             "decoder_input": decoder_input,
+            # (batch_size, 1, 1, sequence_length)
             "source_mask": source_mask,
+            # (batch_size, 1, sequence_length, sequence_length)
             "target_mask": target_mask,
-            # remove the eos token from the decoder input to get the labels
-            "label": decoder_input[:, 1:],
+            # (batch_size, sequence_length)
+            "label": label,
             # not used by the model. used to show progress during training
             "decoder_text": [item["de"] for item in items],
             "encoder_text": [item["en"] for item in items],
