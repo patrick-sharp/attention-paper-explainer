@@ -1,5 +1,4 @@
 __pycache__
-huggingface_cache
 env
-*.json
-*.pkl
+components
+huggingface_cache

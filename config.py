@@ -20,6 +20,7 @@ class BaseConfig:
 
 class ToyConfig:
     random_seed = 0  # used for python standard lib and for pytorch
+    components_folder = "components"  # stores cached components
 
     # Model params
     max_sequence_length = 1500  # only used for translation, not training
@@ -40,15 +41,15 @@ class ToyConfig:
     adam_epsilon = 1e-9
     layer_norm_epsilon = 1e-5
     label_smoothing_epsilon = 0.1
-    # model_weights_folder = "model_weights"
+    train_state_filename = "train_state.pt"
 
     # Dataset params
-    num_sentence_pairs = 50000
+    num_sentence_pairs = 10000
     huggingface_cache_dir = "huggingface_cache"
     raw_dataset_filename = "raw_dataset.pkl"
-    ragged_dataset_filename = "ragged_dataset.pkl"
+    unbatched_dataset_filename = "unbatched_dataset.pkl"
     batched_dataset_filename = "batched_dataset.pkl"
-    max_tokens_in_batch = 25000
+    max_tokens_in_batch = 10000
 
     # Tokenizer params
     vocab_size = 8000
