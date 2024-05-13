@@ -24,13 +24,13 @@ class PositionalEncoding(nn.Module):
         super().__init__()
         self.dropout = nn.Dropout(config.p_dropout)
 
-        # (max_sequence_length, d_model)
-        positional_encodings = torch.zeros(config.max_sequence_length, config.d_model)
+        # (max_seq_len, d_model)
+        positional_encodings = torch.zeros(config.max_seq_len, config.d_model)
 
-        # (max_sequence_length)
-        position = torch.arange(0, config.max_sequence_length, dtype=torch.float)
+        # (max_seq_len)
+        position = torch.arange(0, config.max_seq_len, dtype=torch.float)
 
-        # (max_sequence_length, 1)
+        # (max_seq_len, 1)
         position = position.unsqueeze(1)
 
         # (d_model / 2)
@@ -48,17 +48,17 @@ class PositionalEncoding(nn.Module):
         # cosine odd indices
         positional_encodings[:, 1::2] = torch.cos(position / denominator)
 
-        # (1, max_sequence_length, d_model)
+        # (1, max_seq_len, d_model)
         positional_encodings = positional_encodings.unsqueeze(0)
 
         # Register the positional encoding as a buffer
         self.register_buffer("positional_encodings", positional_encodings)
 
     def forward(self, x):
-        _, sequence_length, _ = x.shape
+        _, seq_len, _ = x.shape
         # broadcasts addition over all sequences in batch
-        # (batch_size, sequence_length, d_model)
-        x = x + self.positional_encodings[:, :sequence_length, :]
+        # (batch_size, seq_len, d_model)
+        x = x + self.positional_encodings[:, :seq_len, :]
 
         return self.dropout(x)
 
@@ -103,20 +103,27 @@ class MultiHeadAttention(nn.Module):
         # For encoder self attention:
         # query, key, and value are all the same
         # mask is the source mask
-        #   (batch_size, 1, 1, sequence_length)
+        #   (batch_size, 1, 1, enc_seq_len)
 
         # For decoder masked self attention:
         # query, key, and value are all the same
         # mask is the target mask
-        #   (batch_size, 1, sequence_length, sequence_length)
+        #   (batch_size, 1, dec_seq_len, dec_seq_len)
 
         # For decoder cross attention:
         # query and key are the same (the encoder output)
         # value is the input from the previous sublayer
         # mask is the source mask
-        #   (batch_size, 1, 1, sequence_length)
+        #   (batch_size, 1, 1, enc_seq_len)
 
-        batch_size, sequence_length, d_model = query.shape
+        # the key and value must have the same sequence length, but the query
+        # can have a different one. This comes in handy during translation
+        # because you only generate one token at a time. This saves a lot of
+        # compute by not having to pad both sequences to the same length.
+        batch_size, q_seq_len, d_model = query.shape
+        _, k_seq_len, _ = value.shape
+        _, v_seq_len, _ = value.shape
+        # assert v_seq_len == k_seq_len
 
         d_key = self.config.d_key
         d_value = self.config.d_value
@@ -129,17 +136,17 @@ class MultiHeadAttention(nn.Module):
         # https://pytorch.org/docs/stable/notes/broadcasting.html#broadcasting-semantics
         # https://pytorch.org/docs/stable/generated/torch.matmul.html
 
-        # (batch_size, sequence_length, num_heads * d_key)
+        # (batch_size, q_seq_len, num_heads * d_key)
         q = self.w_q(query)
 
-        # (batch_size, sequence_length, num_heads * d_key)
+        # (batch_size, q_seq_len, num_heads * d_key)
         k = self.w_k(key)
 
-        # (batch_size, sequence_length, num_heads * d_value)
+        # (batch_size, v_seq_len, num_heads * d_value)
         v = self.w_v(value)
 
         # we want all the queries * all the keys (dot prod) for each head
-        # we want (batch_size, num_heads, sequence_length, sequence_length
+        # we want (batch_size, num_heads, q_seq_len, seq_len
         #
         # get one score for one token:
         #    dot product of query for token and key for token
@@ -148,52 +155,52 @@ class MultiHeadAttention(nn.Module):
         #    = (1, 1)
         #
         # get all the scores for a token
-        #    dot product of query for token and key for token
+        #    dot product of query for token and all keys for token
         #    (1, d_key)
-        #    @ (d_key, sequence_length)
-        #    = (1, sequence_length)
+        #    @ (d_key, q_seq_len)
+        #    = (1, q_seq_len)
         #
         # get scores for one head
-        #    (sequence_length, d_key)
-        #    @ (d_key, sequence_length)
-        #    = (sequence_length, sequence_length)
+        #    (q_seq_len, d_key)
+        #    @ (d_key, k_seq_len)
+        #    = (q_seq_len, k_seq_len)
         #
         # INTERMISSION: remind about matmul rules
         #
         # get the scores for all heads for one sentence in the batch
-        #    (num_heads, sequence_length, d_key)
-        #    @ (num_heads, d_key, sequence_length)
-        #    = (num_heads, sequence_length, sequence_length)
+        #    (num_heads, q_seq_len, d_key)
+        #    @ (num_heads, d_key, k_seq_len)
+        #    = (num_heads, seq_len, k_seq_len)
         #
         # get the scores for all sentences in a batch
-        #    (batch_size, num_heads, sequence_length, d_key)
-        #    @ (batch_size, num_heads, d_key, sequence_length)
-        #    = (batch_size, num_heads, sequence_length, sequence_length)
+        #    (batch_size, num_heads, q_seq_len, d_key)
+        #    @ (batch_size, num_heads, d_key, k_seq_len)
+        #    = (batch_size, num_heads, q_seq_len, k_seq_len)
         #
         # INTERMISSION: learn about how torch.view works and the underlying
         #    order of tensor in memory
 
         # split into heads
 
-        # (batch_size, sequence_length, num_heads, d_key)
-        q = q.view(batch_size, sequence_length, num_heads, d_key)
-        # (batch_size, num_heads, sequence_length, d_key)
+        # (batch_size, q_seq_len, num_heads, d_key)
+        q = q.view(batch_size, q_seq_len, num_heads, d_key)
+        # (batch_size, num_heads, q_seq_len, d_key)
         q = q.transpose(1, 2)
 
-        # (batch_size, sequence_length, num_heads, d_key)
-        k = k.view(batch_size, sequence_length, num_heads, d_key)
-        # (batch_size, num_heads, sequence_length, d_key)
+        # (batch_size, k_seq_len, num_heads, d_key)
+        k = k.view(batch_size, k_seq_len, num_heads, d_key)
+        # (batch_size, num_heads, k_seq_len, d_key)
         k = k.transpose(1, 2)
-        # (batch_size, num_heads, d_key, sequence_length)
+        # (batch_size, num_heads, d_key, k_seq_len)
         kT = k.transpose(2, 3)
 
-        # (batch_size, sequence_length, num_heads, d_value)
-        v = v.view(batch_size, sequence_length, num_heads, d_value)
-        # (batch_size, num_heads, sequence_length, d_value)
+        # (batch_size, k_seq_len, num_heads, d_value)
+        v = v.view(batch_size, k_seq_len, num_heads, d_value)
+        # (batch_size, num_heads, k_seq_len, d_value)
         v = v.transpose(1, 2)
 
         # compute attention scores
-        # (batch_size, num_heads, sequence_length, sequence_length)
+        # (batch_size, num_heads, q_seq_len, k_seq_len)
         x = q @ kT
         # scale attention scores
         x = x / math.sqrt(d_key)
@@ -204,22 +211,22 @@ class MultiHeadAttention(nn.Module):
         # right here is where karpathy would insert the other dropout
 
         # multiply the attention scores by the value vectors and sum them
-        # (batch_size, num_heads, sequence_length, d_value)
+        # (batch_size, num_heads, q_seq_len, d_value)
         x = x @ v
 
         # re-combine the data from all the heads
-        # (batch_size, sequence_length, num_heads, d_value)
+        # (batch_size, q_seq_len, num_heads, d_value)
         x = x.transpose(1, 2)
 
         # tensor is not contiguous because it was created by taking the transpose
         # of a different tensor.
         # use .contiguous to force it into being contiguous (i.e. ordered) in memory.
-        # (batch_size, sequence_length, num_heads * d_value)
-        x = x.contiguous().view(batch_size, sequence_length, num_heads * d_value)
+        # (batch_size, q_seq_len, num_heads * d_value)
+        x = x.contiguous().view(batch_size, q_seq_len, num_heads * d_value)
 
         # output projection
         # note that this has the same dimension as the original input
-        # (batch_size, sequence_length, d_model)
+        # (batch_size, q_seq_len, d_model)
         x = self.w_o(x)
         x = self.dropout(x)
         return x
@@ -240,13 +247,13 @@ class FeedForward(nn.Module):
         self.dropout = nn.Dropout(p_dropout)
 
     def forward(self, x):
-        # x is (batch_size, sequence_length, d_model)
-        # (batch_size, sequence_length, d_ff)
+        # x is (batch_size, seq_len, d_model)
+        # (batch_size, seq_len, d_ff)
         x = self.w_1(x)
         # activation function
         x = torch.relu(x)
 
-        # (batch_size, sequence_length, d_model)
+        # (batch_size, seq_len, d_model)
         x = self.w_2(x)
         x = self.dropout(x)
 
@@ -275,24 +282,24 @@ class LayerNorm(nn.Module):
         self.beta = nn.Parameter(torch.zeros(d_model))
 
     def forward(self, x):
-        # x is (batch_size, sequence_length, d_model)
+        # x is (batch_size, seq_len, d_model)
 
         layer_norm_epsilon = self.layer_norm_epsilon
 
         # use keepdim to avoid squeezing the last dimension.
-        # without keepdim, would be (batch_size, sequence_length)
-        # (batch_size, sequence_length, 1)
+        # without keepdim, would be (batch_size, seq_len)
+        # (batch_size, seq_len, 1)
         mean = x.mean(dim=-1, keepdim=True)
 
-        # (batch_size, sequence_length, 1)
+        # (batch_size, seq_len, 1)
         variance = x.var(dim=-1, keepdim=True)
 
         # normalize
-        # (batch_size, sequence_length, d_model
+        # (batch_size, seq_len, d_model
         x = (x - mean) / torch.sqrt(variance + layer_norm_epsilon)
 
         # adjust
-        # (batch_size, sequence_length, d_model)
+        # (batch_size, seq_len, d_model)
         x = x * self.gamma + self.beta
 
         return x
@@ -323,15 +330,14 @@ class Encoder(nn.Module):
         self.layers = nn.ModuleList(blocks)
 
     def forward(self, x, mask):
-        # x is (batch_size, sequence_length, d_model)
-        # mask is (batch_size, 1, 1, sequence_length)
+        # x is (batch_size, seq_len, d_model)
+        # mask is (batch_size, 1, 1, seq_len)
 
         for layer in self.layers:
-            # (batch_size, sequence_length, d_model)
+            # (batch_size, seq_len, d_model)
             x = layer(x, mask)
 
         return x
-
 
 class DecoderBlock(nn.Module):
     def __init__(self, config):
@@ -349,27 +355,27 @@ class DecoderBlock(nn.Module):
         x = self.causal_attention(x, x, x, target_mask)
         x = self.layer_norm_1(x)
 
-        x = self.cross_attention(encoder_output, encoder_output, x, source_mask)
-        x = self.layer_norm_1(x)
+        x = self.cross_attention(x, encoder_output, encoder_output, source_mask)
+        x = self.layer_norm_2(x)
 
         x = self.feed_forward(x)
         x = self.layer_norm_3(x)
         return x
 
-
 class Decoder(nn.Module):
     def __init__(self, config):
         super().__init__()
         blocks = [DecoderBlock(config) for _ in range(config.num_blocks)]
+
         self.layers = nn.ModuleList(blocks)
 
     def forward(self, x, encoder_output, source_mask, target_mask):
-        # x is (batch_size, sequence_length, d_model)
-        # source_mask is (batch_size, 1, 1, sequence_length)
-        # target_mask is (batch_size, 1, sequence_length, sequence_length)
+        # x is (batch_size, seq_len, d_model)
+        # source_mask is (batch_size, 1, 1, seq_len)
+        # target_mask is (batch_size, 1, seq_len, seq_len)
 
         for layer in self.layers:
-            # (batch_size, sequence_length, d_model)
+            # (batch_size, seq_len, d_model)
             x = layer(x, encoder_output, source_mask, target_mask)
 
         return x
@@ -385,18 +391,18 @@ class ProjectionLayer(nn.Module):
         self.linear = nn.Linear(d_model, vocab_size, bias=bias)
 
     def forward(self, x):
-        # x is (batch_size, sequence_length, d_model)
+        # x is (batch_size, seq_len, d_model)
 
         # Note that we don't apply softmax here. The loss functions used in training
         # expect un-normalized logits
 
-        # (batch_size, sequence_length, vocab_size)
+        # (batch_size, seq_len, vocab_size)
         return self.linear(x)
-
 
 class Transformer(nn.Module):
     def __init__(self, config):
         super().__init__()
+        self.config = config
 
         self.source_embedding = ScaledEmbedding(config)
         self.positional_encoding = PositionalEncoding(config)
@@ -407,22 +413,37 @@ class Transformer(nn.Module):
 
         self.projection_layer = ProjectionLayer(config)
 
-    def forward(self, encoder_input, decoder_input, source_mask, target_mask):
-        """training forward pass, not translation.
-        encoder_input: (batch_size, sequence_length, d_model)
-        decoder_input: (batch_size, sequence_length, d_model)
-        source_mask:  (batch_size, 1, 1, sequence_length)
-        target_mask:  (batch_size, 1, sequence_length, sequence_length)
-        """
-
+    def encode(self, encoder_input, mask):
         x = self.source_embedding(encoder_input)
         x = self.positional_encoding(x)
-        x = self.encoder(x, source_mask)
+        x = self.encoder(x, mask)
+        return x
 
-        encoder_output = x
+    def decode(self, decoder_input, encoder_output, source_mask, target_mask):
         x = self.source_embedding(decoder_input)
         x = self.positional_encoding(x)
         x = self.decoder(x, encoder_output, source_mask, target_mask)
 
         x = self.projection_layer(x)
+        return x
+
+    def forward(self, encoder_input, decoder_input, source_mask, target_mask):
+        """training forward pass, not translation.
+        encoder_input: (batch_size, enc_seq_len)
+        decoder_input: (batch_size, dec_seq_len)
+        source_mask: (batch_size, 1, 1, enc_seq_len)
+        target_mask: (batch_size, 1, dec_seq_len, dec_seq_len)
+        """
+
+        assert len(encoder_input.shape) == 2
+        batch_size, enc_seq_len = encoder_input.shape
+        _, dec_seq_len = decoder_input.shape
+        assert decoder_input.shape == (batch_size, dec_seq_len)
+        assert source_mask.shape == (batch_size, 1, 1, enc_seq_len)
+        assert target_mask.shape == (batch_size, 1, dec_seq_len, dec_seq_len)
+
+        x = self.encode(encoder_input, source_mask)
+
+        encoder_output = x
+        x = self.decode(decoder_input, encoder_output, source_mask, target_mask)
         return x

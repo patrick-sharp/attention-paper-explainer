@@ -7,32 +7,50 @@ import torch
 import torch.nn as nn
 import torchinfo
 from tqdm import tqdm
+import matplotlib.pyplot as plt
 
 import components
 import train
-import model
 import dataset
+import model
+import translate
 
 from config import DEFAULT_CONFIG, BaseConfig, ToyConfig, SmallConfig, BigConfig
 
 config = DEFAULT_CONFIG
 
-random.seed(config.random_seed)
-torch.manual_seed(config.random_seed)
 
-cmp = components.Components(config)
-print(cmp)
+def set_component_enum():
+    """This function resets the repl's component enum values. This makes sure
+    that the enum values have reference equality across refreshes"""
+    global RAW_DATASET
+    global TOKENIZER
+    global UNBATCHED_DATASET
+    global BATCHED_DATASET
+    global MODEL_TRAIN_STATE
+    RAW_DATASET = components.RAW_DATASET
+    TOKENIZER = components.TOKENIZER
+    UNBATCHED_DATASET = components.UNBATCHED_DATASET
+    BATCHED_DATASET = components.BATCHED_DATASET
+    MODEL_TRAIN_STATE = components.MODEL_TRAIN_STATE
 
 
-# import any changes in the project into the repl
 def rf():
+    """refresh: re-import recent changes in the project into the repl"""
     global cmp
     importlib.reload(dataset)
     importlib.reload(model)
     importlib.reload(train)
     importlib.reload(components)
+    importlib.reload(translate)
+    set_component_enum()
     cmp = components.Components(config)
     print(cmp)
+
+
+set_component_enum()
+cmp = components.Components(config)
+print(cmp)
 
 
 # sample forward pass for the model
@@ -50,6 +68,20 @@ def fp(idx=0):
     print(torchinfo.summary(transformer, input_data=input_data, dtypes=[torch.int32]))
 
 
+# translate
+def tr():
+    translate.main([None])
+
+
 # train model
 def tm():
     train.train_model(cmp)
+
+# plot a graph of the current loss
+def plot_loss():
+    plt.plot(cmp.losses)
+    plt.ylabel("Loss")
+    plt.xlabel("Batch")
+    ax = plt.gca()
+    ax.set_ylim([0, cmp.losses[0] + 1])
+    plt.show()

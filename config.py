@@ -2,6 +2,8 @@ import os
 import pathlib
 from pathlib import Path
 
+import torch
+
 
 # TODO: bring to parity with ToyConfig
 class BaseConfig:
@@ -23,7 +25,9 @@ class ToyConfig:
     components_folder = "components"  # stores cached components
 
     # Model params
-    max_sequence_length = 1500  # only used for translation, not training
+    model_int = torch.int32
+    model_float = torch.float32
+    max_seq_len = 1500
     num_blocks = 2  # number of blocks in decoder and encoder each
     d_model = 64
     d_ff = 256
@@ -33,18 +37,20 @@ class ToyConfig:
     p_dropout = 0.1
     bias = False  # whether or not to use a bias in linear layers and LayerNorm
 
-    # model training params
-    train_steps = 10_000  # also called the number of epochs
+    # Model training params
+    train_steps = 10000  # also called the number of epochs
     adam_learning_rate = 1e-4
     adam_beta_1 = 0.9
     adam_beta_2 = 0.98
     adam_epsilon = 1e-9
     layer_norm_epsilon = 1e-5
     label_smoothing_epsilon = 0.1
-    train_state_filename = "train_state.pt"
+    model_train_state_filename = "model_train_state.pt"
 
     # Dataset params
     num_sentence_pairs = 10000
+    validation_sentence_pairs = 50
+    test_sentence_pairs = 50
     huggingface_cache_dir = "huggingface_cache"
     raw_dataset_filename = "raw_dataset.pkl"
     unbatched_dataset_filename = "unbatched_dataset.pkl"
@@ -62,7 +68,6 @@ class ToyConfig:
 
 class SmallConfig:
     # Model params
-    sequence_length = 350  # max sentence in this config's training data is 201 tokens
     num_blocks = 2  # number of blocks in decoder and encoder each
     d_model = 256
     d_ff = 1024
