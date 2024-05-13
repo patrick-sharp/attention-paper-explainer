@@ -47,8 +47,9 @@ class Components:
     losses = None
 
     def __init__(self, config):
-        random.seed(config.random_seed)
-        torch.manual_seed(config.random_seed)
+        if config.use_random_seed:
+            random.seed(config.random_seed)
+            torch.manual_seed(config.random_seed)
         Path(config.components_folder).mkdir(parents=True, exist_ok=True)
         self.config = config
 
@@ -90,6 +91,7 @@ class Components:
             self.clean(UNBATCHED_DATASET)
             self.clean(TOKENIZER)
             self.clean(RAW_DATASET)
+            print("Initializing raw dataset...")
             component = dataset.raw_dataset(self.config)
             self.raw_dataset = component
         elif component_type == TOKENIZER:
@@ -126,7 +128,7 @@ class Components:
             # to translate an arbitrary sentence without loading the dataset
             self.clean(MODEL_TRAIN_STATE)
             self.epoch = 0
-            self.model = model.Transformer(self.config)
+            self.model = model.Transformer(self)
             self.optimizer = train.init_optimizer(self.config, self.model)
             self.losses = []
             # don't set component; the train loop handles saving the state
@@ -156,48 +158,59 @@ class Components:
 
         path = self.paths[component_type]
 
-        if component_type == RAW_DATASET:
-            self.raw_dataset = load_pickle(path)
-        elif component_type == TOKENIZER:
-            tokenizer = Tokenizer(BPE())
-            tokenizer = tokenizer.from_file(path)
-            self.tokenizer = tokenizer
-        elif component_type == UNBATCHED_DATASET:
-            self.unbatched_dataset = load_pickle(path)
-        elif component_type == BATCHED_DATASET:
-            self.batched_dataset = load_pickle(path)
-        elif component_type == MODEL_TRAIN_STATE:
-            self.epoch = 0
-            self.model = model.Transformer(self.config)
-            self.optimizer = train.init_optimizer(self.config, self.model)
-            self.losses = []
+        try:
+            if component_type == RAW_DATASET:
+                self.raw_dataset = load_pickle(path)
+            elif component_type == TOKENIZER:
+                tokenizer = dataset.init_tokenizer(self.config)
+                tokenizer = tokenizer.from_file(path)
+                self.tokenizer = tokenizer
+            elif component_type == UNBATCHED_DATASET:
+                self.unbatched_dataset = load_pickle(path)
+            elif component_type == BATCHED_DATASET:
+                self.batched_dataset = load_pickle(path)
+            elif component_type == MODEL_TRAIN_STATE:
+                self.epoch = 0
+                self.model = model.Transformer(self)
+                self.optimizer = train.init_optimizer(self.config, self.model)
+                self.losses = []
 
-            train_state = torch.load(path)
-            # load epoch + 1 so we don't retread the epoch that the model just finished
-            self.epoch = train_state["epoch"] + 1
-            self.model.load_state_dict(train_state["model_state"])
-            self.optimizer.load_state_dict(train_state["optimizer_state"])
-            self.losses = train_state["losses"]
+                train_state = torch.load(path)
+                # load epoch + 1 so we don't retread the epoch that the model just finished
+                self.epoch = train_state["epoch"] + 1
+                self.model.load_state_dict(train_state["model_state"])
+                self.optimizer.load_state_dict(train_state["optimizer_state"])
+                self.losses = train_state["losses"]
 
-        self.present[component_type] = True
+            self.present[component_type] = True
+        except Exception as ex:
+            # If the state on disk is bad, delete it
+            print(ex)
+            print(
+                f"Exception loading {component_type.name}, deleting cached version..."
+            )
+            self.clean(component_type)
 
     def clean(self, component_type):
-        if not self.exists(component_type):
-            return
-
-        path = self.paths[component_type]
-        Path.unlink(path)
-        self.present[component_type] = False
-
-        if component_type == RAW_DATASET:
+        if component_type.value <= RAW_DATASET.value:
+            Path.unlink(self.paths[RAW_DATASET], missing_ok=True)
+            self.present[RAW_DATASET] = False
             self.raw_dataset = None
-        elif component_type == TOKENIZER:
+        if component_type.value <= TOKENIZER.value:
+            Path.unlink(self.paths[TOKENIZER], missing_ok=True)
+            self.present[TOKENIZER] = False
             self.tokenizer = None
-        elif component_type == UNBATCHED_DATASET:
+        if component_type.value <= UNBATCHED_DATASET.value:
+            Path.unlink(self.paths[UNBATCHED_DATASET], missing_ok=True)
+            self.present[UNBATCHED_DATASET] = False
             self.unbatched_dataset = None
-        elif component_type == BATCHED_DATASET:
+        if component_type.value <= BATCHED_DATASET.value:
+            Path.unlink(self.paths[BATCHED_DATASET], missing_ok=True)
+            self.present[BATCHED_DATASET] = False
             self.batched_dataset = None
-        elif component_type == MODEL_TRAIN_STATE:
+        if component_type.value <= MODEL_TRAIN_STATE.value:
+            Path.unlink(self.paths[MODEL_TRAIN_STATE], missing_ok=True)
+            self.present[MODEL_TRAIN_STATE] = False
             self.epoch = None
             self.model = None
             self.optimizer = None
@@ -211,10 +224,14 @@ class Components:
         for ct in ComponentType:
             self.clean(ct)
 
-    def create_all(self):
-        self.clean_all()
-        self.create(BATCHED_DATASET)
-        self.create(MODEL_TRAIN_STATE)
+    def init_all(self):
+        """Initialize all components, preferring to retrieve from cache"""
+        for type in self.types:
+            if not self.present[type]:
+                if self.exists(type):
+                    self.load(type)
+                else:
+                    self.create(type)
 
     def status(self, component_type):
         def red(x):

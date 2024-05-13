@@ -33,7 +33,7 @@ def train_model(components):
     label_smoothing_epsilon = config.label_smoothing_epsilon
 
     train_steps = config.train_steps
-    vocab_size = config.vocab_size
+    vocab_size = components.tokenizer.get_vocab_size()
 
     raw_dataset = components.raw_dataset
     tokenizer = components.tokenizer
@@ -47,7 +47,7 @@ def train_model(components):
     losses = components.losses
 
     # batch_size=None disables automatic addition of batch dimension
-    train_dataloader = DataLoader(batched_dataset, batch_size=None)
+    train_dataloader = DataLoader(batched_dataset, batch_size=None, shuffle=True)
 
     loss_fn = nn.CrossEntropyLoss(
         ignore_index=tokenizer.token_to_id(pad_token),

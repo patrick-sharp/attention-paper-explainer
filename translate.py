@@ -7,6 +7,9 @@ from components import Components
 import dataset
 import model
 
+de_0 = "Wiederaufnahme der Sitzungsperiode"
+en_0 = "Resumption of the session"
+
 
 def translate(components, sentence):
     config = components.config
@@ -38,7 +41,7 @@ def translate(components, sentence):
     eos_token = config.eos_token
     eos_token_id = tokenizer.token_to_id(eos_token)
 
-    while decoder_input.shape[1] < 10:
+    while decoder_input.shape[1] < 50:
         target_mask = dataset.create_target_mask(decoder_input, pad_token_id)
 
         # (batch_size, dec_seq_len, vocab_size)
@@ -51,11 +54,12 @@ def translate(components, sentence):
 
         # (1)
         # get the index of the highest prediction value
-        _, next_token_id = torch.max(next_token_predictions, dim=0)
+        _, next_token_tensor = torch.max(next_token_predictions, dim=0)
+        next_token_id = next_token_tensor.item()
 
         # (batch_size, dec_seq_len)
         decoder_input = torch.cat(
-            [decoder_input, torch.empty(1, 1).fill_(next_token_id.item())],
+            [decoder_input, torch.empty(1, 1).fill_(next_token_id)],
             dim=1,
         ).int()
 
@@ -69,8 +73,8 @@ def translate(components, sentence):
 def main(argv):
     if len(sys.argv) == 1:
         # sentence from the wmt14 test set
-        sentence = "Im Januar habe ich ein ermutigendes Gespräch mit ihm geführt."
-        reference_translation = "In January, I had an encouraging discussion with him."
+        sentence = de_0
+        reference_translation = en_0
         print("Translating:")
         print(f'"{sentence}"')
         print()
@@ -95,7 +99,11 @@ def main(argv):
         cmp.create(MODEL_TRAIN_STATE)
 
     translation = translate(cmp, sentence)
-    print(f"\"{translation}\"")
+    # strip the word-delimiting special characters out of the translation so it looks nicer
+    translation = translation.replace(" " + config.DEFAULT_CONFIG.csp_token, "")
+    translation = translation.replace(config.DEFAULT_CONFIG.eow_token, "")
+    translation = translation.replace(config.DEFAULT_CONFIG.csp_token, "")
+    print(f'"{translation}"')
 
 
 if __name__ == "__main__":

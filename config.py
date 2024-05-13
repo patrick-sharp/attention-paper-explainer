@@ -21,6 +21,7 @@ class BaseConfig:
 
 
 class ToyConfig:
+    use_random_seed = False
     random_seed = 0  # used for python standard lib and for pytorch
     components_folder = "components"  # stores cached components
 
@@ -28,17 +29,17 @@ class ToyConfig:
     model_int = torch.int32
     model_float = torch.float32
     max_seq_len = 1500
-    num_blocks = 2  # number of blocks in decoder and encoder each
-    d_model = 64
-    d_ff = 256
-    num_heads = 2
-    d_key = 16  # size of the query and key vectors for each token
-    d_value = 16  # size of the value vector for each token
+    num_blocks = 1  # number of blocks in decoder and encoder each
+    d_model = 512  # 64
+    d_ff = 512  # 2048 #256
+    num_heads = 8  # 2
+    d_key = 64  # 16  # size of the query and key vectors for each token
+    d_value = 64  # 16  # size of the value vector for each token
     p_dropout = 0.1
     bias = False  # whether or not to use a bias in linear layers and LayerNorm
 
     # Model training params
-    train_steps = 10000  # also called the number of epochs
+    train_steps = 50  # also called the number of epochs
     adam_learning_rate = 1e-4
     adam_beta_1 = 0.9
     adam_beta_2 = 0.98
@@ -48,9 +49,8 @@ class ToyConfig:
     model_train_state_filename = "model_train_state.pt"
 
     # Dataset params
-    num_sentence_pairs = 10000
-    validation_sentence_pairs = 50
-    test_sentence_pairs = 50
+    # num_sentence_pairs = 10000
+    num_sentence_pairs = 1
     huggingface_cache_dir = "huggingface_cache"
     raw_dataset_filename = "raw_dataset.pkl"
     unbatched_dataset_filename = "unbatched_dataset.pkl"
@@ -58,12 +58,14 @@ class ToyConfig:
     max_tokens_in_batch = 10000
 
     # Tokenizer params
-    vocab_size = 8000
+    max_vocab_size = 8000  # actual size may be less if the data is small
     tokenizer_filename = "tokenizer.json"
     bos_token = "[BOS]"  # beginning of sentence token
     eos_token = "[EOS]"  # end of sentence token
     pad_token = "[PAD]"  # padding token, for padding shorter sequences to the full sequence length
     unk_token = "[UNK]"  # unknown token, for tokens that weren't in training data
+    csp_token = "[CSP]"  # continuing subword prefix, indicates that this token is not the start of a word
+    eow_token = "[EOW]"  # end of word token
 
 
 class SmallConfig:

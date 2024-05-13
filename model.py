@@ -4,16 +4,16 @@ import torch.nn.functional as functional
 
 import math
 
-from config import DEFAULT_CONFIG
-
 
 # Note: no dropout. Dropout is applied to the sum of the embedding and
 # positional encoding
 class ScaledEmbedding(nn.Module):
-    def __init__(self, config):
+    def __init__(self, components):
         super().__init__()
+        config = components.config
+        vocab_size = components.tokenizer.get_vocab_size()
         self.d_model = config.d_model
-        self.embedding = nn.Embedding(config.vocab_size, config.d_model)
+        self.embedding = nn.Embedding(vocab_size, config.d_model)
 
     def forward(self, x):
         return self.embedding(x) * math.sqrt(self.d_model)
@@ -80,15 +80,12 @@ class MultiHeadAttention(nn.Module):
 
         # (d_model, num_heads * d_key)
         self.w_q = nn.Linear(d_model, num_heads * d_key, bias=bias)
-        self.w_q_dropout = nn.Dropout(p_dropout)
 
         # (d_model, num_heads * d_key)
         self.w_k = nn.Linear(d_model, num_heads * d_key, bias=bias)
-        self.w_k_dropout = nn.Dropout(p_dropout)
 
         # (d_model, num_heads * d_value)
         self.w_v = nn.Linear(d_model, num_heads * d_value, bias=bias)
-        self.w_v_dropout = nn.Dropout(p_dropout)
 
         # combines all heads
         # (num_heads * d_value, d_model)
@@ -139,7 +136,7 @@ class MultiHeadAttention(nn.Module):
         # (batch_size, q_seq_len, num_heads * d_key)
         q = self.w_q(query)
 
-        # (batch_size, q_seq_len, num_heads * d_key)
+        # (batch_size, v_seq_len, num_heads * d_key)
         k = self.w_k(key)
 
         # (batch_size, v_seq_len, num_heads * d_value)
@@ -315,11 +312,13 @@ class EncoderBlock(nn.Module):
         self.layer_norm_2 = LayerNorm(config)
 
     def forward(self, x, mask):
+        residual = x
         x = self.attention(x, x, x, mask)
-        x = self.layer_norm_1(x)
+        x = self.layer_norm_1(x + residual)
 
+        residual = x
         x = self.feed_forward(x)
-        x = self.layer_norm_2(x)
+        x = self.layer_norm_2(x + residual)
         return x
 
 
@@ -339,6 +338,7 @@ class Encoder(nn.Module):
 
         return x
 
+
 class DecoderBlock(nn.Module):
     def __init__(self, config):
         super().__init__()
@@ -352,15 +352,19 @@ class DecoderBlock(nn.Module):
         self.layer_norm_3 = LayerNorm(config)
 
     def forward(self, x, encoder_output, source_mask, target_mask):
+        residual = x
         x = self.causal_attention(x, x, x, target_mask)
-        x = self.layer_norm_1(x)
+        x = self.layer_norm_1(x + residual)
 
+        residual = x
         x = self.cross_attention(x, encoder_output, encoder_output, source_mask)
-        x = self.layer_norm_2(x)
+        x = self.layer_norm_2(x + residual)
 
+        residual = x
         x = self.feed_forward(x)
-        x = self.layer_norm_3(x)
+        x = self.layer_norm_3(x + residual)
         return x
+
 
 class Decoder(nn.Module):
     def __init__(self, config):
@@ -382,10 +386,11 @@ class Decoder(nn.Module):
 
 
 class ProjectionLayer(nn.Module):
-    def __init__(self, config):
+    def __init__(self, components):
         super().__init__()
+        config = components.config
         d_model = config.d_model
-        vocab_size = config.vocab_size
+        vocab_size = components.tokenizer.get_vocab_size()
         bias = config.bias
 
         self.linear = nn.Linear(d_model, vocab_size, bias=bias)
@@ -399,19 +404,21 @@ class ProjectionLayer(nn.Module):
         # (batch_size, seq_len, vocab_size)
         return self.linear(x)
 
+
 class Transformer(nn.Module):
-    def __init__(self, config):
+    def __init__(self, components):
         super().__init__()
+        config = components.config
         self.config = config
 
-        self.source_embedding = ScaledEmbedding(config)
+        self.source_embedding = ScaledEmbedding(components)
         self.positional_encoding = PositionalEncoding(config)
         self.encoder = Encoder(config)
 
-        self.target_embedding = ScaledEmbedding(config)
+        self.target_embedding = ScaledEmbedding(components)
         self.decoder = Decoder(config)
 
-        self.projection_layer = ProjectionLayer(config)
+        self.projection_layer = ProjectionLayer(components)
 
     def encode(self, encoder_input, mask):
         x = self.source_embedding(encoder_input)
@@ -420,7 +427,7 @@ class Transformer(nn.Module):
         return x
 
     def decode(self, decoder_input, encoder_output, source_mask, target_mask):
-        x = self.source_embedding(decoder_input)
+        x = self.target_embedding(decoder_input)
         x = self.positional_encoding(x)
         x = self.decoder(x, encoder_output, source_mask, target_mask)
 

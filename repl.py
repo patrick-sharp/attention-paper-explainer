@@ -15,7 +15,7 @@ import dataset
 import model
 import translate
 
-from config import DEFAULT_CONFIG, BaseConfig, ToyConfig, SmallConfig, BigConfig
+from config import DEFAULT_CONFIG
 
 config = DEFAULT_CONFIG
 
@@ -55,7 +55,6 @@ print(cmp)
 
 # sample forward pass for the model
 def fp(idx=0):
-
     transformer = model.Transformer(config)
 
     input_data = [
@@ -75,7 +74,9 @@ def tr():
 
 # train model
 def tm():
+    cmp.init_all()
     train.train_model(cmp)
+
 
 # plot a graph of the current loss
 def plot_loss():
@@ -84,4 +85,23 @@ def plot_loss():
     plt.xlabel("Batch")
     ax = plt.gca()
     ax.set_ylim([0, cmp.losses[0] + 1])
+    plt.show()
+
+
+def plot_positional_encodings():
+    if not cmp.present(MODEL_TRAIN_STATE):
+        cmp.create(MODEL_TRAIN_STATE)
+
+    tokens = 10
+
+    # (10, d_model)
+    pos_encoding = cmp.model.positional_encoding.positional_encodings[0, 0:tokens, :]
+
+    plt.figure(figsize=(12, 8))
+    plt.pcolormesh(pos_encoding, cmap="viridis")
+    plt.xlabel("Embedding Dimensions")
+    plt.xlim((0, cmp.config.d_model))
+    plt.ylim((tokens, 0))
+    plt.ylabel("Token Position")
+    plt.colorbar()
     plt.show()
