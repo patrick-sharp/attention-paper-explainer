@@ -14,12 +14,17 @@ from tokenizers.processors import TemplateProcessing
 from torch.utils.data import Dataset
 
 
-def raw_dataset(config):
-    """Returns a huggingface dataset with only the first num_sentence_pairs items."""
+def raw_dataset(config, split):
+    """Returns the wmt14 huggingface dataset."""
     ds = load_dataset(
-        "wmt14", "de-en", split="train", cache_dir=config.huggingface_cache_dir
+        "wmt14", "de-en", split=split, cache_dir=config.huggingface_cache_dir
     )
-    ds = ds.select(range(config.num_sentence_pairs))
+    # only return the dataset with a subset of the rows
+    if split == "train":
+        num_pairs = config.train_sentence_pairs
+    elif split == "test":
+        num_pairs = config.test_sentence_pairs
+    ds = ds.select(range(num_pairs))
     return ds
 
 
@@ -91,7 +96,7 @@ def tokenize_dataset(config, raw_dataset, tokenizer):
         de = item["translation"]["de"]
         en = item["translation"]["en"]
 
-        # del this key, otherwise it shows up in the returned dict
+        # delete this key, otherwise it shows up in the returned dict
         del item["translation"]
 
         de_tok = tokenizer.encode(de).ids
@@ -153,27 +158,47 @@ def create_target_mask(decoder_input, pad_token_id):
     target_pad_mask = target_pad_mask.unsqueeze(1).unsqueeze(1)
 
     # (batch_size, 1, seq_len, seq_len)
-    target_mask = target_pad_mask & target_causal_mask
+    target_mask = target_pad_mask | target_causal_mask
     return target_mask
 
 
 class BatchedDataset(Dataset):
-    def __init__(self, config, tokenizer, tokenized_dataset):
+    split = None
+
+    def __init__(self, components, split="train"):
         """Compute where each batch starts and ends in the dataset, and what
         sequence length each batch should have.
         Store this in self.batch_shapes"""
         super().__init__()
+        self.split = split
+
+        config = components.config
+        tokenizer = components.tokenizer
+        if split == "train":
+            tokenized_dataset = components.train_tokenized
+        elif split == "test":
+            tokenized_dataset = components.test_tokenized
         self.config = config
         max_tokens_in_batch = config.max_tokens_in_batch
 
         self.tokenizer = tokenizer
         self.tokenized_dataset = tokenized_dataset
 
+        if split == "train":
+            # sample sentences to translate during model training after every epoch
+            # this shows how the model is progressing
+            num_examples = config.num_examples
+            num_examples = min(num_examples, len(tokenized_dataset))
+            example_indices = random.sample(range(len(tokenized_dataset)), num_examples)
+            self.examples = []
+            for i in example_indices:
+                pair = tokenized_dataset[i]
+                self.examples.append({"source": pair["de"], "target": pair["en"]})
+
         batch_shapes = []
         batch_start = 0
         max_len = 0  # this is the maximum length of either de or en
 
-        print("Batching data...")
         i = 0
 
         def append_batch():
@@ -208,6 +233,8 @@ class BatchedDataset(Dataset):
         self.batch_shapes = batch_shapes
 
     def pad_batch(self, batch):
+        split = self.split
+
         start = batch["start"]
         end = batch["end"]
         seq_len = batch["max_len"]
@@ -240,7 +267,7 @@ class BatchedDataset(Dataset):
         label = decoder_input.roll(-1, 1)
         label[:, -1] = pad_token_id
 
-        return {
+        batch = {
             # (batch_size, seq_len)
             "encoder_input": encoder_input,
             # (batch_size, seq_len)
@@ -251,14 +278,17 @@ class BatchedDataset(Dataset):
             "target_mask": target_mask,
             # (batch_size, seq_len)
             "label": label,
-            # not used by the model. used to show progress during training
-            "encoder_text": [item["de"] for item in items],
-            "decoder_text": [item["en"] for item in items],
         }
+
+        if split == "test":
+            batch["source_text"] = [item["de"] for item in items]
+            batch["target_text"] = [item["en"] for item in items]
+
+        return batch
 
     def __len__(self):
         return len(self.batch_shapes)
 
-    def __getitem__(self, idx):
-        """Get the idx'th batch of the dataset"""
-        return self.pad_batch(self.batch_shapes[idx])
+    def __getitem__(self, n):
+        """Get the nth batch of the dataset"""
+        return self.pad_batch(self.batch_shapes[n])
