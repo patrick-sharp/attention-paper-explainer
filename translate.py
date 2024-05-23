@@ -113,17 +113,17 @@ def beam_search(components, encoder_input, source_mask, prettify=True):
         perplexities = next_perplexities
 
     translations = []
-    for x, ppl in zip(ended_decoder_inputs, ended_perplexities):
+    for ppl, x in zip(ended_perplexities, ended_decoder_inputs):
         x = tokenizer.decode(x[0].tolist())
         if prettify:
             x = x.replace(" " + csp_token, "")
             x = x.replace(eow_token, "")
             x = x.replace(csp_token, "")
-        translations.append((x, ppl))
+        translations.append((ppl, x))
 
     # sort by perplexity so we show the best guesses first
     def sort_ppl(x):
-        return x[1]
+        return x[0]
     return list(sorted(translations, key=sort_ppl))
 
 
@@ -278,7 +278,7 @@ def print_comparison(sentence, reference_translation, translations):
         print(f'"{reference_translation}"')
         print()
     print("Model translations:")
-    for x, ppl in translations:
+    for ppl, x in translations:
         print(f'{ppl: 7.3f} "{x}"')
 
 
