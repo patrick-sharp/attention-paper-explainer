@@ -52,7 +52,6 @@ def beam_search(components, encoder_input, source_mask, prettify=True):
     ended_decoder_inputs = []
 
     while len(decoder_inputs) > 0 and translation_len < max_translation_len:
-        # print(len(decoder_inputs), len(ended_decoder_inputs))
         translation_len += 1
 
         # compute predictions for each item in the beam
@@ -80,16 +79,20 @@ def beam_search(components, encoder_input, source_mask, prettify=True):
             probabilities = beam_probabilities[i]
             scores = ppl - torch.log(probabilities)
             scores /= length_penalty
+            scores = scores.unsqueeze(-1) # so we can cat them on dim 1
             beam_scores.append(scores)
+        # (vocab_size, len(decoder_inputs))
+        beam_scores = torch.cat(beam_scores, dim=1)
+        # (vocab_size)
+        superscored, superscored_i = torch.min(beam_scores, dim=1)
         vals, inds = torch.topk(
-            torch.cat(beam_scores), len(decoder_inputs), largest=False
+            superscored, len(decoder_inputs), largest=False
         )
 
         next_decoder_inputs = []
         next_perplexities = []
-        for i in inds.tolist():
-            beam_i = i // vocab_size
-            token_id = i % vocab_size
+        for token_id in inds.tolist():
+            beam_i = superscored_i[i]
             next_token_tensor = torch.empty(1, 1).fill_(token_id)
             decoder_input = decoder_inputs[beam_i]
             decoder_input = torch.cat(
@@ -118,7 +121,10 @@ def beam_search(components, encoder_input, source_mask, prettify=True):
             x = x.replace(csp_token, "")
         translations.append((x, ppl))
 
-    return translations
+    # sort by perplexity so we show the best guesses first
+    def sort_ppl(x):
+        return x[1]
+    return list(sorted(translations, key=sort_ppl))
 
 
 def translate_tensor(components, encoder_input, source_mask, prettify=True):
@@ -272,8 +278,8 @@ def print_comparison(sentence, reference_translation, translations):
         print(f'"{reference_translation}"')
         print()
     print("Model translations:")
-    for x, _ in translations:
-        print(f'"{x}"')
+    for x, ppl in translations:
+        print(f'{ppl: 7.3f} "{x}"')
 
 
 def main(argv):
