@@ -63,6 +63,10 @@ class BaseConfig:
     label_smoothing_epsilon = 0.1
     model_train_state_filename = "model_train_state.pt"
 
+    # Translation params
+    beam_width = 4
+    length_penalty_alpha = 0.6
+
 
 class ToyConfig(BaseConfig):
     """Very small parameter values"""

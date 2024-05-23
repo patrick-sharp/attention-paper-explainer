@@ -4,7 +4,7 @@ from torch.utils.data import DataLoader
 
 import components
 import dataset
-from translate import translate_tensor
+from translate import beam_search
 
 
 def test_model(components):
@@ -30,16 +30,19 @@ def test_model(components):
     pad_token_id = tokenizer.token_to_id(pad_token)
 
     for batch in test_dataloader:
+        # batch size always 1 here
         source_text = batch["de"]
         target_text = batch["en"]
 
         encoder_input = torch.tensor(batch["de_tok"], dtype=torch.int32).unsqueeze(0)
         source_mask = dataset.create_source_mask(encoder_input, pad_token_id)
 
+        # bleu expects multiple expected translations, so make a singleton list for now
         expected_text.append([target_text])
         translation = translate_tensor(components, encoder_input, source_mask)
         predicted_text.append(translation)
 
+    # default n gram is 4, so won't consider sentences 3 words or less
     metric = BLEUScore()
     print(predicted_text)
     print(expected_text)

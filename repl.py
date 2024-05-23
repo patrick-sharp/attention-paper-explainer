@@ -11,10 +11,11 @@ import matplotlib.pyplot as plt
 
 import configuration
 import components
-import train
+import scratch
 import dataset
 import model
 import translate
+import train
 import test
 
 
@@ -34,11 +35,12 @@ print(cmp)
 def rf():
     """refresh: re-import recent changes in the project into the repl"""
     importlib.reload(configuration)
+    importlib.reload(components)
+    importlib.reload(scratch)
     importlib.reload(dataset)
     importlib.reload(model)
-    importlib.reload(train)
-    importlib.reload(components)
     importlib.reload(translate)
+    importlib.reload(train)
     importlib.reload(test)
 
     global config

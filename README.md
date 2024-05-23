@@ -71,13 +71,19 @@ how to train a huggingface tokenizer
 dataset
   https://huggingface.co/datasets/wmt14/viewer/de-en
   https://www.statmt.org/wmt14/translation-task.html
-    commoncrawl.de-en
-    europarl-v7.de-en
-    news-commentary-v9.de-en.
+    three corpora for de-en:
+      europarl-v7.de-en
+      news-commentary-v9.de-en.
+      commoncrawl.de-en
 The annotated transformer
   https://nlp.seas.harvard.edu/annotated-transformer/
 Smart batching tutorial
   https://mccormickml.com/2020/07/29/smart-batching-tutorial/#s4-smart-batching
+The google paper on beam search that they cite
+  https://arxiv.org/pdf/1609.08144
+  note that they use a length penalty and a coverage penalty. the attention paper doesn't mention a coverage penalty, just length
+  in this beam search paper, the length penalty is called length normalization
+  Their equation is under Decoder on page 12 of the pdf
 
 ## Useful links
 backend specs colab
