@@ -1,8 +1,10 @@
 import os
 import importlib
+import math
 from pathlib import Path
 import random
 import time
+
 import torch
 import torch.nn as nn
 import torchinfo
@@ -77,11 +79,15 @@ def tm():
 
 
 # test (i.e. eval) model
+# prints BLEU score of model on test set
+# this is a number between 0.0 and 1.0
 def ev():
     cmp.init_all()
-    return test.test_model(cmp)
+    bleu_score = test.test_model(cmp)
+    print("BLEU score:", bleu_score)
 
 
+# plot a color mesh of the positional encodings
 def plot_positional_encodings():
     """This code is from Jay Alammar"""
 
@@ -113,16 +119,28 @@ def plot_loss():
     plt.show()
 
 
+# print n sample translations for one example from the model's training.
+# manually specify a different idx to see a different translation
+# this will show you how the model model improved over time.
+# translations will be evenly spaced across all epochs
 def print_translations(idx=0, n=5):
     if cmp.translations is None or len(cmp.translations) == 0:
         print("no translations recorded")
         return
+
+    source_text = cmp.train_batched.examples[idx]["source"] 
+    target_text = cmp.train_batched.examples[idx]["target"] 
+    print(source_text)
+    print(target_text)
 
     length = len(cmp.translations)
     indices = [0]
     for i in range(1, n - 1):
         indices.append(i * length // n)
     indices.append(length - 1)
+
+    max_i = indices[-1]
+    max_epoch_digits = math.floor(math.log(max_i, 10)) + 1
     for i in indices:
-        print()
-        print(cmp.translations[i][idx]["translation"])
+        translation = cmp.translations[i][idx]["translation"]
+        print(f"epoch {i:{max_epoch_digits}d}:", translation)

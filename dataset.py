@@ -184,9 +184,9 @@ class BatchedDataset(Dataset):
         self.tokenizer = tokenizer
         self.tokenized_dataset = tokenized_dataset
 
+        # sample sentences to translate during model training after every epoch
+        # this shows how the model is progressing
         if split == "train":
-            # sample sentences to translate during model training after every epoch
-            # this shows how the model is progressing
             num_examples = config.num_examples
             num_examples = min(num_examples, len(tokenized_dataset))
             example_indices = random.sample(range(len(tokenized_dataset)), num_examples)
@@ -194,7 +194,9 @@ class BatchedDataset(Dataset):
             for i in example_indices:
                 pair = tokenized_dataset[i]
                 self.examples.append({"source": pair["de"], "target": pair["en"]})
-
+        else:
+            self.examples = None
+    
         batch_shapes = []
         batch_start = 0
         max_len = 0  # this is the maximum length of either de or en
@@ -233,12 +235,11 @@ class BatchedDataset(Dataset):
         self.batch_shapes = batch_shapes
 
     def pad_batch(self, batch):
-        split = self.split
-
         start = batch["start"]
         end = batch["end"]
         seq_len = batch["max_len"]
         batch_size = end - start
+        split = self.tokenized_dataset.split
 
         pad_token = self.config.pad_token
         pad_token_id = self.tokenizer.token_to_id(pad_token)
@@ -280,6 +281,8 @@ class BatchedDataset(Dataset):
             "label": label,
         }
 
+        # we need target text for computing BLEU
+        # source text is useful to have for debugging / instrumentation
         if split == "test":
             batch["source_text"] = [item["de"] for item in items]
             batch["target_text"] = [item["en"] for item in items]
@@ -290,5 +293,6 @@ class BatchedDataset(Dataset):
         return len(self.batch_shapes)
 
     def __getitem__(self, n):
-        """Get the nth batch of the dataset"""
+        """Get the nth batch of the dataset. 
+        Generated dynamically from the batch shapes, the tokenized dataset, and n."""
         return self.pad_batch(self.batch_shapes[n])

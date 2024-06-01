@@ -4,7 +4,7 @@ from torch.utils.data import DataLoader
 
 import components
 import dataset
-from translate import beam_search
+from translate import beam_search, translate_tensor
 
 
 def test_model(components):
@@ -37,15 +37,14 @@ def test_model(components):
         encoder_input = torch.tensor(batch["de_tok"], dtype=torch.int32).unsqueeze(0)
         source_mask = dataset.create_source_mask(encoder_input, pad_token_id)
 
-        # bleu expects multiple expected translations, so make a singleton list for now
+        # bleu expects multiple expected translations, so make a singleton list.
+        # the wmt14 dataset only has one english translation per german sentence
         expected_text.append([target_text])
         translation = translate_tensor(components, encoder_input, source_mask)
         predicted_text.append(translation)
 
     # default n gram is 4, so won't consider sentences 3 words or less
     metric = BLEUScore()
-    print(predicted_text)
-    print(expected_text)
     bleu = metric.update(predicted_text, expected_text)
     bleu = metric.compute()
 

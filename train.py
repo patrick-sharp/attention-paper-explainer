@@ -28,8 +28,7 @@ def init_optimizer(config, model):
     return optimizer
 
 
-def benchmark_translations(components):
-    examples = components.train_batched.examples
+def benchmark_translations(components, examples):
     epoch_translations = []
     for example in examples:
         example_copy = dict(example)
@@ -71,7 +70,7 @@ def train_model(components):
         # it's funny to see what a completely
         # untrained model will predict, so make that
         # the first group of example translations
-        epoch_translations = benchmark_translations(components)
+        epoch_translations = benchmark_translations(components, examples)
         translations.append(epoch_translations)
 
     for epoch in range(components.epoch, train_steps):
@@ -113,7 +112,7 @@ def train_model(components):
             optimizer.zero_grad(set_to_none=True)
 
         # track the progress of the model on example sentences after each epoch
-        epoch_translations = benchmark_translations(components)
+        epoch_translations = benchmark_translations(components, examples)
         translations.append(epoch_translations)
 
         # Save the train state at the end of every epoch
