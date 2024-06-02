@@ -128,8 +128,8 @@ def print_translations(idx=0, n=5):
         print("no translations recorded")
         return
 
-    source_text = cmp.train_batched.examples[idx]["source"] 
-    target_text = cmp.train_batched.examples[idx]["target"] 
+    source_text = cmp.train_batched.examples[idx]["source"]
+    target_text = cmp.train_batched.examples[idx]["target"]
     print(source_text)
     print(target_text)
 

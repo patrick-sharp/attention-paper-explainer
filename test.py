@@ -4,7 +4,7 @@ from torch.utils.data import DataLoader
 
 import components
 import dataset
-from translate import beam_search, translate_tensor
+from translate import translate_tensor
 
 
 def test_model(components):

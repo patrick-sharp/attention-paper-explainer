@@ -163,12 +163,17 @@ def create_target_mask(decoder_input, pad_token_id):
 
 
 class BatchedDataset(Dataset):
-    split = None
+    config = None
+    split = None  # either train or test
+    tokenizer = None
+    tokenized_dataset = None
+    examples = None  # only for train dataset
+    batch_bounds = None
 
     def __init__(self, components, split="train"):
         """Compute where each batch starts and ends in the dataset, and what
         sequence length each batch should have.
-        Store this in self.batch_shapes"""
+        Store this in self.batch_bounds"""
         super().__init__()
         self.split = split
 
@@ -194,45 +199,74 @@ class BatchedDataset(Dataset):
             for i in example_indices:
                 pair = tokenized_dataset[i]
                 self.examples.append({"source": pair["de"], "target": pair["en"]})
-        else:
-            self.examples = None
-    
-        batch_shapes = []
-        batch_start = 0
-        max_len = 0  # this is the maximum length of either de or en
 
-        i = 0
+        batch_bounds = []
 
-        def append_batch():
-            batch_shapes.append(
+        def append_batch(start, end, max_len, md=0, me=0):
+            batch_bounds.append(
                 {
-                    "start": batch_start,  # inclusive bound
-                    "end": i,  # exclusive bound
-                    "max_len": max_len,
+                    "start": start,  # inclusive bound
+                    "end": end,  # exclusive bound
+                    "max_len": max_len,  # length of longest sequence in batch
+                    "md": md,
+                    "me": me,
                 }
             )
 
-        for i in tqdm(range(len(self.tokenized_dataset))):
-            item = self.tokenized_dataset[i]
-            new_max_len = max(max_len, len(item["de"]), len(item["en"]))
+        batch_start = 0
+        max_len = 0  # this is the maximum length of either de or en
+        md = 0
+        me = 0
+        for i in tqdm(range(len(tokenized_dataset))):
+            curr = self.tokenized_dataset[i]
+            # max len if we add curr to the batch
+            with_curr_max_len = max(max_len, len(curr["de"]), len(curr["en"]))
+            with_curr_md = max(md, len(curr["de"]))
+            with_curr_me = max(me, len(curr["en"]))
 
-            if new_max_len * (i - batch_start + 1) > max_tokens_in_batch:
-                append_batch()
+            pairs_in_batch = i - batch_start + 1
+            with_curr_tokens = with_curr_max_len * pairs_in_batch * 2
+
+            if with_curr_tokens > max_tokens_in_batch:
+                # curr is in the next batch
+                append_batch(
+                    batch_start, i, with_curr_max_len, with_curr_md, with_curr_me
+                )
                 batch_start = i
-                max_len = max(len(item["de"]), len(item["en"]))
+                max_len = max(len(curr["de"]), len(curr["en"]))
+                md = len(curr["de"])
+                me = len(curr["en"])
             else:
-                max_len = new_max_len
-        # unless the last sentence pairs in the dataset happen to be exactly
-        # the right number of tokens, we need to make them into a final
-        # smaller batch
-        if len(batch_shapes) == 0:
-            i += 1
-            append_batch()
-        elif batch_shapes[-1]["end"] != len(self.tokenized_dataset):
-            i += 1
-            append_batch()
+                # curr is in this batch
+                max_len = with_curr_max_len
+                md = with_curr_md
+                me = with_curr_me
 
-        self.batch_shapes = batch_shapes
+        # we will always have at least one trailing element, so we need to append
+        # one final batch
+        append_batch(batch_start, len(tokenized_dataset), max_len, md, me)
+
+        # for i in tqdm(range(len(self.tokenized_dataset))):
+        #    item = self.tokenized_dataset[i]
+        #    new_max_len = max(max_len, len(item["de"]), len(item["en"]))
+
+        #    if new_max_len * (i - batch_start + 1) > max_tokens_in_batch:
+        #        append_batch()
+        #        batch_start = i
+        #        max_len = max(len(item["de"]), len(item["en"]))
+        #    else:
+        #        max_len = new_max_len
+        ## unless the last sentence pairs in the dataset happen to be exactly
+        ## the right number of tokens, we need to make them into a final
+        ## smaller batch
+        # if len(batch_bounds) == 0:
+        #    i += 1
+        #    append_batch()
+        # elif batch_bounds[-1]["end"] != len(self.tokenized_dataset):
+        #    i += 1
+        #    append_batch()
+
+        self.batch_bounds = batch_bounds
 
     def pad_batch(self, batch):
         start = batch["start"]
@@ -290,9 +324,9 @@ class BatchedDataset(Dataset):
         return batch
 
     def __len__(self):
-        return len(self.batch_shapes)
+        return len(self.batch_bounds)
 
     def __getitem__(self, n):
-        """Get the nth batch of the dataset. 
+        """Get the nth batch of the dataset.
         Generated dynamically from the batch shapes, the tokenized dataset, and n."""
-        return self.pad_batch(self.batch_shapes[n])
+        return self.pad_batch(self.batch_bounds[n])

@@ -68,10 +68,10 @@ class BaseConfig:
     length_penalty_alpha = 0.6
 
 
-class ToyConfig(BaseConfig):
+class SmallConfig(BaseConfig):
     """Very small parameter values"""
 
-    name = "ToyConfig"
+    name = "SmallConfig"
 
 
 class SingleSentenceConfig(BaseConfig):
