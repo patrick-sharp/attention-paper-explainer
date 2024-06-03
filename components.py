@@ -94,7 +94,7 @@ class Components:
         random.seed(seed)
         torch.manual_seed(seed)
 
-    def exists(self, component_type):
+    def cached(self, component_type):
         """return whether a cached version of this component exists"""
         path = self.paths[component_type]
         return os.path.exists(path)
@@ -111,7 +111,8 @@ class Components:
 
         print("Initializing " + name + "...")
         if component_type.value == TRAIN_RAW.value:
-            component = dataset.raw_dataset(self.config, split="train")
+            # component = dataset.raw_dataset(self.config, split="train")
+            component = dataset.SyntheticDataset("toy_dataset_train.csv", split="train")
             self.train_raw = component
         elif component_type == TOKENIZER:
             component = dataset.train_tokenizer(self.config, self.train_raw)
@@ -132,7 +133,8 @@ class Components:
             self.fresh_train_state()
             # don't set component; the train loop handles saving the state
         elif component_type == TEST_RAW:
-            component = dataset.raw_dataset(self.config, split="test")
+            # component = dataset.raw_dataset(self.config, split="test")
+            component = dataset.SyntheticDataset("toy_dataset_test.csv", split="test")
             self.test_raw = component
         elif component_type == TEST_TOKENIZED:
             component = dataset.tokenize_dataset(
@@ -169,7 +171,7 @@ class Components:
             save_pickle(component, path)
 
     def load(self, component_type):
-        if not self.exists(component_type):
+        if not self.cached(component_type):
             return
 
         path = self.paths[component_type]
@@ -209,6 +211,14 @@ class Components:
                 f"Exception loading {component_type.name}, deleting cached version..."
             )
             self.clean(component_type)
+
+    def init(self, component_type):
+        """Initialize component, preferring to retrieve from cache"""
+        if not self.present[component_type]:
+            if self.cached(component_type):
+                self.load(component_type)
+            else:
+                self.create(component_type)
 
     def clean(self, component_type):
         """cleans a component and any components that depend on it"""
@@ -251,22 +261,26 @@ class Components:
         self.losses = []
         self.translations = []
 
+    def create_all(self):
+        for type in self.types:
+            self.create(type)
+
     def load_all(self):
         for ct in ComponentType:
             self.load(ct)
-
-    def clean_all(self):
-        for ct in ComponentType:
-            self.clean(ct)
 
     def init_all(self):
         """Initialize all components, preferring to retrieve from cache"""
         for type in self.types:
             if not self.present[type]:
-                if self.exists(type):
+                if self.cached(type):
                     self.load(type)
                 else:
                     self.create(type)
+
+    def clean_all(self):
+        for ct in ComponentType:
+            self.clean(ct)
 
     def status(self, component_type):
         def red(x):

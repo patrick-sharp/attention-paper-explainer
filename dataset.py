@@ -1,15 +1,16 @@
 import random
 import os
+import copy
 
-from tqdm import tqdm
-
-import torch
 from datasets import load_dataset
+import pandas as pd
 from tokenizers import Tokenizer
 from tokenizers.models import BPE
 from tokenizers.trainers import BpeTrainer
 from tokenizers.pre_tokenizers import Whitespace
 from tokenizers.processors import TemplateProcessing
+import torch
+from tqdm import tqdm
 
 from torch.utils.data import Dataset
 
@@ -330,3 +331,34 @@ class BatchedDataset(Dataset):
         """Get the nth batch of the dataset.
         Generated dynamically from the batch shapes, the tokenized dataset, and n."""
         return self.pad_batch(self.batch_bounds[n])
+
+
+class SyntheticDataset(Dataset):
+    def __init__(self, filename, split):
+        self.split = split
+        self.items = []
+        df = pd.read_csv(filename)
+        for i in range(len(df)):
+            self.items.append({"translation": df.iloc[i].to_dict()})
+
+    def __len__(self):
+        if hasattr(self, "items"):
+            return len(self.items)
+        else:
+            return 0
+
+    def __getitem__(self, idx):
+        return self.items[idx]
+
+    def sort(self, key, reverse=False):
+        def keyfunc(x):
+            return x[key]
+
+        self.items.sort(key=keyfunc, reverse=reverse)
+        return self
+
+    def map(self, func):
+        new_ds = copy.deepcopy(self)
+        for i, item in enumerate(new_ds.items):
+            new_ds.items[i] = func(item)
+        return new_ds

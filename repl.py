@@ -55,7 +55,7 @@ def rf():
 
 # sample forward pass for the model
 def fp(idx=0):
-    transformer = model.Transformer(config)
+    transformer = model.Transformer(cmp)
 
     input_data = [
         cmp.train_batched[idx]["encoder_input"],

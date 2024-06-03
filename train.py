@@ -111,16 +111,18 @@ def train_model(components):
             # set gradients to None so they don't affect the next batch
             optimizer.zero_grad(set_to_none=True)
 
-        # track the progress of the model on example sentences after each epoch
-        epoch_translations = benchmark_translations(components, examples)
-        translations.append(epoch_translations)
-
         # Save the train state at the end of every epoch
         with DelayedKeyboardInterrupt():
+            # epoch + 1 so we don't re-train an epoch.
+            # the value of epoch is the epoch we just finished
+            components.epoch = epoch + 1
+            # track the progress of the model on example sentences after each epoch
+            epoch_translations = benchmark_translations(components, examples)
+            translations.append(epoch_translations)
             components.save(
                 MODEL_TRAIN_STATE,
                 {
-                    "epoch": epoch,
+                    "epoch": epoch + 1,
                     "losses": losses,
                     "model_state": model.state_dict(),
                     "optimizer_state": optimizer.state_dict(),

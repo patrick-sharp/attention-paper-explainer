@@ -1,4 +1,5 @@
 import math
+import re
 import sys
 
 import torch
@@ -13,11 +14,12 @@ de_0 = "Wiederaufnahme der Sitzungsperiode"
 en_0 = "Resumption of the session"
 
 
-def prettify(translation):
+def prettify(config, translation):
     """strip the word-delimiting special characters (csp, eow) out of the translation so it looks nicer"""
-    translation = translation.replace(" " + DEFAULT_CONFIG.csp_token, "")
-    translation = translation.replace(DEFAULT_CONFIG.eow_token, "")
-    translation = translation.replace(DEFAULT_CONFIG.csp_token, "")
+    translation = translation.replace(" " + config.csp_token, "")
+    translation = translation.replace(config.eow_token, "")
+    # cleaup spaces between words and punctuation
+    translation = re.sub(" ([^\w\s])", "\\1", translation)
     return translation
 
 
@@ -128,7 +130,7 @@ def translate_beam_search(components, sentence):
     translations = []
     for ppl, decoder_input in zip(ended_perplexities, ended_decoder_inputs):
         translation = tokenizer.decode(decoder_input[0].tolist())
-        prettified = prettify(translation)
+        prettified = prettify(config, translation)
         translations.append((ppl, prettified))
 
     # sort by perplexity so we show the best guesses first
@@ -139,8 +141,7 @@ def translate_beam_search(components, sentence):
 
 
 def translate_single(components, sentence):
-    """If return_multiple is False, return a single translation.
-    If return_multiple is True, use beam search to return multiple translations."""
+    """Returns a single translation of sentence"""
     config = components.config
     tokenizer = components.tokenizer
     model = components.model
@@ -148,8 +149,6 @@ def translate_single(components, sentence):
     bos_token = config.bos_token
     eos_token = config.eos_token
     pad_token = config.pad_token
-    csp_token = config.csp_token
-    eow_token = config.eow_token
     vocab_size = tokenizer.get_vocab_size()
     beam_width = config.beam_width
     length_penalty_alpha = config.length_penalty_alpha
@@ -195,7 +194,7 @@ def translate_single(components, sentence):
 
     translation = tokenizer.decode(decoder_input[0].tolist())
 
-    return prettify(translation)
+    return prettify(config, translation)
 
 
 def print_comparison(sentence, reference_translation, translations):

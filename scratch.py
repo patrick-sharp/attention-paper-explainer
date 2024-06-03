@@ -1,5 +1,29 @@
 # scratchpad for experimenting with different python functions
 
+
+import os
+import importlib
+import math
+from pathlib import Path
+import random
+import time
+
+import torch
+import torch.nn as nn
+import torchinfo
+from tqdm import tqdm
+import matplotlib.pyplot as plt
+
+import configuration
+import components
+import scratch
+import dataset
+import model
+import translate
+import train
+import test
+
+import pandas as pd
 from torchmetrics.text import BLEUScore
 
 
@@ -27,3 +51,23 @@ def batches(cmp):
         total_tokens += batch_tokens
     # generally tokens wasted without different lengths is about 5%
     return total_tokens_wasted, total_tokens, total_tokens_wasted / total_tokens
+
+
+def get_synth():
+    df = pd.read_csv("synthetic_dataset.csv")
+    return df
+
+
+def ev(cmp):
+    # sentence = cmp.test_raw[0]["translation"]['de']
+    # ref = cmp.test_raw[0]["translation"]['en']
+    sentence = "Der Mann ging zum Markt. Er kaufte Lebensmittel."
+    ref = "The man went to the market. He bought groceries."
+    translations = translate.translate_beam_search(cmp, sentence)
+    translate.print_comparison(sentence, ref, translations)
+
+
+def tok(cmp):
+    sentence = cmp.test_raw[0]["translation"]["de"]
+    ref = cmp.test_raw[0]["translation"]["en"]
+    return cmp.tokenizer.encode(ref)

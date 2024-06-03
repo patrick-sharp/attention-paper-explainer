@@ -19,9 +19,9 @@ class BaseConfig:
     model_float = torch.float32
     max_seq_len = 1500  # maximum length of input sequence the model will accept
     max_translation_len = max_seq_len  # maximum length of output translation
-    num_blocks = 1  # number of blocks in decoder and encoder each
+    num_blocks = 6  # number of blocks in decoder and encoder each
     d_model = 512
-    d_ff = 512
+    d_ff = 2048
     num_heads = 8
     d_key = 64  # size of the query and key vectors for each token
     d_value = 64  # size of the value vector for each token
@@ -79,8 +79,14 @@ class SingleSentenceConfig(BaseConfig):
     Useful for testing the train loop quickly"""
 
     name = "SingleSentenceConfig"
-    max_translation_len = 20
-    train_steps = 15
+
+    d_model = 256
+    d_ff = 512
+    num_heads = 4
+    num_blocks = 2
+
+    max_translation_len = 50
+    train_steps = 200
     train_sentence_pairs = 1
     test_sentence_pairs = 1
 
