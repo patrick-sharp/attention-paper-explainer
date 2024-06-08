@@ -19,9 +19,9 @@ import components
 import scratch
 import dataset
 import model
-import translate
-import train
-import test
+import translation
+import training
+import testing
 
 import pandas as pd
 from torchmetrics.text import BLEUScore
@@ -63,8 +63,8 @@ def ev(cmp):
     # ref = cmp.test_raw[0]["translation"]['en']
     sentence = "Der Mann ging zum Markt. Er kaufte Lebensmittel."
     ref = "The man went to the market. He bought groceries."
-    translations = translate.translate_beam_search(cmp, sentence)
-    translate.print_comparison(sentence, ref, translations)
+    translations = translation.translate_beam_search(cmp, sentence)
+    translation.print_comparison(sentence, ref, translations)
 
 
 def tok(cmp):

@@ -10,7 +10,7 @@ from tokenizers.models import BPE
 
 import dataset
 import model
-import train
+import training
 
 
 def save_pickle(obj, path):
@@ -70,6 +70,7 @@ class Components:
         Path(folder).mkdir(parents=True, exist_ok=True)
 
         self.config = config
+        self.device = torch.device(config.device_string)
 
         if config.use_random_seed:
             self.set_seeds()
@@ -150,6 +151,7 @@ class Components:
             self.save(component_type, component)
 
         self.present[component_type] = True
+        print("Done initializing " + name)
 
     def save(self, component_type, component):
         path = self.paths[component_type]
@@ -257,7 +259,7 @@ class Components:
     def fresh_train_state(self):
         self.epoch = 0
         self.model = model.Transformer(self)
-        self.optimizer = train.init_optimizer(self.config, self.model)
+        self.optimizer = training.init_optimizer(self.config, self.model)
         self.losses = []
         self.translations = []
 
@@ -291,8 +293,6 @@ class Components:
             # ANSI escape characters for green
             return "\033[92m{}\033[00m".format(x)
 
-        cache = "cache"
-        fresh = "fresh"
         colon = ": "
 
         def wrap(s):
@@ -342,5 +342,11 @@ class Components:
         return render_present(name, name_str_length, extra)
 
     def __repr__(self):
+        colon = ": "
+        max_name_length = max([len(i.name) for i in ComponentType])
+        name_str_length = max_name_length + len(colon)
+
+        config_status = "  " + "config: ".ljust(name_str_length) + self.config.name + "\n"
+        device_status = "  " + "device: ".ljust(name_str_length) + self.config.device_string + "\n"
         statuses = ["  " + self.status(ct) for ct in ComponentType]
-        return "Components:\n" + "\n".join(statuses)
+        return "Components:\n" + config_status + device_status + "\n".join(statuses)

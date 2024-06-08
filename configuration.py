@@ -15,6 +15,7 @@ class BaseConfig:
     components_folder = "components"  # stores cached components
 
     # Model params
+    device_string = "cpu" # what pytorch backend to use (cpu, cuda, mkl, mps, etc.)
     model_int = torch.int32
     model_float = torch.float32
     max_seq_len = 1500  # maximum length of input sequence the model will accept
@@ -27,6 +28,7 @@ class BaseConfig:
     d_value = 64  # size of the value vector for each token
     p_dropout = 0.1
     bias = False  # whether or not to use a bias in linear layers and LayerNorm
+    flash_attention = False # whether or not to use the flash attention cuda kernel
 
     # Dataset params
     huggingface_cache_dir = "huggingface_cache"
@@ -86,7 +88,7 @@ class SingleSentenceConfig(BaseConfig):
     num_blocks = 2
 
     max_translation_len = 50
-    train_steps = 200
+    train_steps = 100
     train_sentence_pairs = 1
     test_sentence_pairs = 1
 

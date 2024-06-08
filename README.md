@@ -10,6 +10,8 @@ total_params = sum(p.numel() for p in m.parameters())
 total_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
 total_params = sum(p.numel() for p in m.parameters() if p.requires_grad)
 
+params = [p for p in model.parameters() if p.requires_grad]
+
 python -i repl.py
 rf()
 

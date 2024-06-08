@@ -247,26 +247,6 @@ class BatchedDataset(Dataset):
         # one final batch
         append_batch(batch_start, len(tokenized_dataset), max_len, md, me)
 
-        # for i in tqdm(range(len(self.tokenized_dataset))):
-        #    item = self.tokenized_dataset[i]
-        #    new_max_len = max(max_len, len(item["de"]), len(item["en"]))
-
-        #    if new_max_len * (i - batch_start + 1) > max_tokens_in_batch:
-        #        append_batch()
-        #        batch_start = i
-        #        max_len = max(len(item["de"]), len(item["en"]))
-        #    else:
-        #        max_len = new_max_len
-        ## unless the last sentence pairs in the dataset happen to be exactly
-        ## the right number of tokens, we need to make them into a final
-        ## smaller batch
-        # if len(batch_bounds) == 0:
-        #    i += 1
-        #    append_batch()
-        # elif batch_bounds[-1]["end"] != len(self.tokenized_dataset):
-        #    i += 1
-        #    append_batch()
-
         self.batch_bounds = batch_bounds
 
     def pad_batch(self, batch):

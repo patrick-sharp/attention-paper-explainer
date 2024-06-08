@@ -4,7 +4,7 @@ from torch.utils.data import DataLoader
 
 import components
 import dataset
-from translate import translate_single
+from translation import translate_single
 
 
 def test_model(components):
@@ -44,7 +44,7 @@ def test_model(components):
         # the wmt14 dataset only has one english translation per german sentence
         expected_text.append([target_text])
         # translation = translate_tensor(components, encoder_input, source_mask)
-        translation = translate_single(components, source_text)
+        _, translation = translate_single(components, source_text)
         predicted_text.append(translation)
 
     # default n gram is 4, so won't consider sentences 3 words or less

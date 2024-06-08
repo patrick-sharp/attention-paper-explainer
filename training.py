@@ -9,7 +9,7 @@ import dataset
 import model
 from configuration import DEFAULT_CONFIG
 from keyboard_interrupt import DelayedKeyboardInterrupt
-from translate import translate_single
+from translation import translate_single
 
 
 def init_optimizer(config, model):
@@ -32,7 +32,9 @@ def benchmark_translations(components, examples):
     epoch_translations = []
     for example in examples:
         example_copy = dict(example)
-        example_copy["translation"] = translate_single(components, example["source"])
+        perplexity, translation = translate_single(components, example["source"])
+        example_copy["translation"] = translation
+        example_copy["perplexity"] = perplexity
         epoch_translations.append(example_copy)
     return epoch_translations
 

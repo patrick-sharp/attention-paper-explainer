@@ -16,23 +16,27 @@ import components
 import scratch
 import dataset
 import model
-import translate
-import train
-import test
+import translation
+import training
+import testing
 
 
 def set_component_enum():
     """This function resets the repl's component enum values. This makes sure
-    that the enum values have reference equality across refreshes"""
+    that the enum values have reference equality after you refresh the repl with rf"""
     for component_type in components.ComponentType:
         globals()[component_type.name] = component_type
 
 
-set_component_enum()
-config = configuration.DEFAULT_CONFIG
-cmp = components.Components(config)
-print(cmp)
+def repl_state():
+    global config
+    global cmp
+    set_component_enum()
+    config = configuration.DEFAULT_CONFIG
+    cmp = components.Components(config)
+    print(cmp)
 
+repl_state()
 
 def rf():
     """refresh: re-import recent changes in the project into the repl"""
@@ -45,16 +49,11 @@ def rf():
     importlib.reload(train)
     importlib.reload(test)
 
-    global config
-    global cmp
-    set_component_enum()
-    config = configuration.DEFAULT_CONFIG
-    cmp = components.Components(config)
-    print(cmp)
+    repl_state()
 
 
 # sample forward pass for the model
-def fp(idx=0):
+def summary(idx=0):
     transformer = model.Transformer(cmp)
 
     input_data = [
@@ -68,22 +67,22 @@ def fp(idx=0):
 
 
 # translate
-def tr():
-    translate.main([None])
+def translate():
+    translation.main([None])
 
 
 # train model
-def tm():
+def train():
     cmp.init_all()
-    train.train_model(cmp)
+    training.train_model(cmp)
 
 
-# test (i.e. eval) model
+# test model
 # prints BLEU score of model on test set
 # this is a number between 0.0 and 1.0
-def ev():
+def test():
     cmp.init_all()
-    bleu_score = test.test_model(cmp)
+    bleu_score = testing.test_model(cmp)
     print("BLEU score:", bleu_score)
 
 
@@ -139,8 +138,21 @@ def print_translations(idx=0, n=5):
         indices.append(i * length // n)
     indices.append(length - 1)
 
+    def digits(x):
+        return math.floor(math.log(x, 10)) + 1
+
     max_i = indices[-1]
-    max_epoch_digits = math.floor(math.log(max_i, 10)) + 1
+    max_epoch_digits = digits(max_i)
+    epoch_width = max(len("epoch"), max_epoch_digits)
+
+    max_ppl = max([cmp.translations[i][idx]["perplexity"] for i in indices])
+    max_ppl_digits = digits(max_ppl)
+    max_ppl_width = max_ppl_digits + 4 # decimal point + 3 digits of precision
+    ppl_width = max(len("perplexity"), max_ppl_width)
+
+    print(f"{'epoch':{epoch_width}}, {'perplexity':{max_ppl_width}}, translation")
     for i in indices:
         translation = cmp.translations[i][idx]["translation"]
-        print(f"epoch {i:{max_epoch_digits}d}:", translation)
+        perplexity = cmp.translations[i][idx]["perplexity"]
+        print(f"{i:{epoch_width}d}, {perplexity:{ppl_width}.3f},", translation)
+

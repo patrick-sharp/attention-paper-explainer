@@ -19,6 +19,8 @@ def prettify(config, translation):
     translation = translation.replace(" " + config.csp_token, "")
     translation = translation.replace(config.eow_token, "")
     # cleaup spaces between words and punctuation
+    # the whitespace pre-tokenizer splits on r"\w+|[^\w\s]+"
+    # each match for that regex in the input sentence will be a token
     translation = re.sub(" ([^\w\s])", "\\1", translation)
     return translation
 
@@ -88,6 +90,10 @@ def translate_beam_search(components, sentence):
             probabilities = softmax(logits, dim=0)
             beam_probabilities.append(probabilities)
 
+        # we select translations based on their scores. the score is based on the
+        # perplexity, but adjusted slightly.
+        # without this adjustment, longer translations are disfavored because they have
+        # more terms in the perplexity calculation.
         # scores(prev_ppl, pred, length) = (prev_ppl + ln(pred))/lp(length)
         length_penalty = lp(translation_len, length_penalty_alpha)
         beam_scores = []
@@ -167,6 +173,8 @@ def translate_single(components, sentence):
     encoder_output = model.encode(encoder_input, source_mask)
     decoder_input = torch.empty(1, 1, dtype=torch.int32).fill_(bos_token_id)
 
+    perplexity = 0.0
+
     while decoder_input.shape[1] < max_translation_len:
         target_mask = dataset.create_target_mask(decoder_input, pad_token_id)
 
@@ -176,11 +184,13 @@ def translate_single(components, sentence):
         )
 
         # (1, vocab_size)
-        next_token_logits = projection[0, -1, :]
+        logits = projection[0, -1, :]
+        probabilities = softmax(logits, dim=0)
 
         # get the index of the highest prediction value
-        _, next_token_id = torch.max(next_token_logits, dim=0)
+        probability, next_token_id = torch.max(probabilities, dim=0)
         next_token_id = next_token_id.item()
+        perplexity -= math.log(probability.item())
         next_token_tensor = torch.empty(1, 1).fill_(next_token_id)
 
         # (batch_size, dec_seq_len)
@@ -194,7 +204,7 @@ def translate_single(components, sentence):
 
     translation = tokenizer.decode(decoder_input[0].tolist())
 
-    return prettify(config, translation)
+    return perplexity, prettify(config, translation)
 
 
 def print_comparison(sentence, reference_translation, translations):
