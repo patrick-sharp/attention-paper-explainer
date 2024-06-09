@@ -14,11 +14,14 @@ import matplotlib.pyplot as plt
 import configuration
 import components
 import scratch
-import dataset
+import toy_dataset
+import bpe_tokenizer
+import masking
 import model
 import translation
 import training
 import testing
+import dynamic_batched_dataset
 
 
 def set_component_enum():
@@ -36,19 +39,23 @@ def repl_state():
     cmp = components.Components(config)
     print(cmp)
 
+
 repl_state()
+
 
 def rf():
     """refresh: re-import recent changes in the project into the repl"""
     importlib.reload(configuration)
     importlib.reload(components)
     importlib.reload(scratch)
-    importlib.reload(dataset)
+    importlib.reload(toy_dataset)
+    importlib.reload(bpe_tokenizer)
+    importlib.reload(masking)
     importlib.reload(model)
-    importlib.reload(translate)
-    importlib.reload(train)
-    importlib.reload(test)
-
+    importlib.reload(translation)
+    importlib.reload(training)
+    importlib.reload(testing)
+    importlib.reload(dynamic_batched_dataset)
     repl_state()
 
 
@@ -147,7 +154,7 @@ def print_translations(idx=0, n=5):
 
     max_ppl = max([cmp.translations[i][idx]["perplexity"] for i in indices])
     max_ppl_digits = digits(max_ppl)
-    max_ppl_width = max_ppl_digits + 4 # decimal point + 3 digits of precision
+    max_ppl_width = max_ppl_digits + 4  # decimal point + 3 digits of precision
     ppl_width = max(len("perplexity"), max_ppl_width)
 
     print(f"{'epoch':{epoch_width}}, {'perplexity':{max_ppl_width}}, translation")
@@ -155,4 +162,3 @@ def print_translations(idx=0, n=5):
         translation = cmp.translations[i][idx]["translation"]
         perplexity = cmp.translations[i][idx]["perplexity"]
         print(f"{i:{epoch_width}d}, {perplexity:{ppl_width}.3f},", translation)
-

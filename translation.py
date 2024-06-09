@@ -32,18 +32,13 @@ def translate_beam_search(components, sentence):
     tokenizer = components.tokenizer
     model = components.model
     max_translation_len = config.max_translation_len
-    bos_token = config.bos_token
-    eos_token = config.eos_token
-    pad_token = config.pad_token
-    csp_token = config.csp_token
-    eow_token = config.eow_token
+    bos_token_id = components.bos_token_id
+    eos_token_id = components.eos_token_id
+    pad_token_id = components.pad_token_id
     vocab_size = tokenizer.get_vocab_size()
     beam_width = config.beam_width
     length_penalty_alpha = config.length_penalty_alpha
 
-    bos_token_id = tokenizer.token_to_id(bos_token)
-    eos_token_id = tokenizer.token_to_id(eos_token)
-    pad_token_id = tokenizer.token_to_id(pad_token)
     model.eval()
 
     tokens = tokenizer.encode(sentence).ids
@@ -152,16 +147,13 @@ def translate_single(components, sentence):
     tokenizer = components.tokenizer
     model = components.model
     max_translation_len = config.max_translation_len
-    bos_token = config.bos_token
-    eos_token = config.eos_token
-    pad_token = config.pad_token
+    bos_token_id = components.bos_token_id
+    eos_token_id = components.eos_token_id
+    pad_token_id = components.pad_token_id
     vocab_size = tokenizer.get_vocab_size()
     beam_width = config.beam_width
     length_penalty_alpha = config.length_penalty_alpha
 
-    bos_token_id = tokenizer.token_to_id(bos_token)
-    eos_token_id = tokenizer.token_to_id(eos_token)
-    pad_token_id = tokenizer.token_to_id(pad_token)
     model.eval()
 
     tokens = tokenizer.encode(sentence).ids

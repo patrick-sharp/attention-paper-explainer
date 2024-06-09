@@ -421,7 +421,6 @@ class Transformer(nn.Module):
         self.projection_layer = ProjectionLayer(components)
         self.to(components.device)
 
-
     def encode(self, encoder_input, mask):
         x = self.source_embedding(encoder_input)
         x = self.positional_encoding(x)

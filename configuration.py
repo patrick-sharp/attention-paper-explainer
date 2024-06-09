@@ -4,6 +4,8 @@ from pathlib import Path
 
 import torch
 
+import toy_dataset
+
 
 class BaseConfig:
     """The base parameter values from the paper"""
@@ -15,7 +17,7 @@ class BaseConfig:
     components_folder = "components"  # stores cached components
 
     # Model params
-    device_string = "cpu" # what pytorch backend to use (cpu, cuda, mkl, mps, etc.)
+    device_string = "cpu"  # what pytorch backend to use (cpu, cuda, mkl, mps, etc.)
     model_int = torch.int32
     model_float = torch.float32
     max_seq_len = 1500  # maximum length of input sequence the model will accept
@@ -28,22 +30,22 @@ class BaseConfig:
     d_value = 64  # size of the value vector for each token
     p_dropout = 0.1
     bias = False  # whether or not to use a bias in linear layers and LayerNorm
-    flash_attention = False # whether or not to use the flash attention cuda kernel
+    flash_attention = False  # whether or not to use the flash attention cuda kernel
 
     # Dataset params
-    huggingface_cache_dir = "huggingface_cache"
+    dataset_module = toy_dataset
     num_examples = 5  # number of example pairs the model will keep track of during training to give an idea of how well it's doing
-    max_tokens_in_batch = 10000
-
-    train_sentence_pairs = 10000
     train_raw_filename = "train_raw.pkl"
     train_tokenized_filename = "train_tokenized.pkl"
     train_batched_filename = "train_batched.pkl"
-
-    test_sentence_pairs = 1000
     test_raw_filename = "test_raw.pkl"
     test_tokenized_filename = "test_tokenized.pkl"
     test_batched_filename = "test_batched.pkl"
+
+    # wmt14 dataset params
+    max_tokens_in_batch = 10000
+    train_sentence_pairs = 10000
+    test_sentence_pairs = 1000
 
     # Tokenizer params
     max_vocab_size = 8000  # actual size may be less if the data is small

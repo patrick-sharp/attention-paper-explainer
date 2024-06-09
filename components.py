@@ -8,7 +8,7 @@ import torch
 from tokenizers import Tokenizer
 from tokenizers.models import BPE
 
-import dataset
+import bpe_tokenizer
 import model
 import training
 
@@ -103,6 +103,8 @@ class Components:
     def create(self, component_type):
         """create and save a component"""
         self.clean(component_type)
+        config = self.config
+        dataset_module = config.dataset_module
 
         for dependency in dependencies[component_type]:
             if not self.present[dependency]:
@@ -111,20 +113,22 @@ class Components:
         name = component_type.name.lower().replace("_", " ")
 
         print("Initializing " + name + "...")
-        if component_type.value == TRAIN_RAW.value:
-            # component = dataset.raw_dataset(self.config, split="train")
-            component = dataset.SyntheticDataset("toy_dataset_train.csv", split="train")
+        if component_type == TRAIN_RAW:
+            component = dataset_module.raw_dataset(config, split="train")
             self.train_raw = component
         elif component_type == TOKENIZER:
-            component = dataset.train_tokenizer(self.config, self.train_raw)
+            component = bpe_tokenizer.train_tokenizer(config, self.train_raw)
             self.tokenizer = component
+            self.set_special_token_ids()
         elif component_type == TRAIN_TOKENIZED:
-            component = dataset.tokenize_dataset(
-                self.config, self.train_raw, self.tokenizer
+            component = dataset_module.tokenize_dataset(
+                config, self.train_raw, self.tokenizer
             )
             self.train_tokenized = component
         elif component_type == TRAIN_BATCHED:
-            component = dataset.BatchedDataset(self)
+            component = dataset_module.batch_dataset(
+                self, self.train_tokenized, split="train"
+            )
             self.train_batched = component
         elif component_type == MODEL_TRAIN_STATE:
             # model train state is a special case.
@@ -134,16 +138,17 @@ class Components:
             self.fresh_train_state()
             # don't set component; the train loop handles saving the state
         elif component_type == TEST_RAW:
-            # component = dataset.raw_dataset(self.config, split="test")
-            component = dataset.SyntheticDataset("toy_dataset_test.csv", split="test")
+            component = dataset_module.raw_dataset(config, split="test")
             self.test_raw = component
         elif component_type == TEST_TOKENIZED:
-            component = dataset.tokenize_dataset(
+            component = dataset_module.tokenize_dataset(
                 self.config, self.test_raw, self.tokenizer
             )
             self.test_tokenized = component
         elif component_type == TEST_BATCHED:
-            component = dataset.BatchedDataset(self, split="test")
+            component = dataset_module.batch_dataset(
+                self, self.test_tokenized, split="test"
+            )
             self.test_batched = component
 
         # the train loop handles initializing and saving the model state
@@ -182,9 +187,10 @@ class Components:
             if component_type == TRAIN_RAW:
                 self.train_raw = load_pickle(path)
             elif component_type == TOKENIZER:
-                tokenizer = dataset.init_tokenizer(self.config)
+                tokenizer = bpe_tokenizer.init_tokenizer(self.config)
                 tokenizer = tokenizer.from_file(path)
                 self.tokenizer = tokenizer
+                self.set_special_token_ids()
             elif component_type == TRAIN_TOKENIZED:
                 self.train_tokenized = load_pickle(path)
             elif component_type == TRAIN_BATCHED:
@@ -239,6 +245,11 @@ class Components:
             self.train_raw = None
         elif component_type == TOKENIZER:
             self.tokenizer = None
+            self.bos_token_id = None
+            self.eos_token_id = None
+            self.pad_token_id = None
+            self.csp_token_id = None
+            self.eow_token_id = None
         elif component_type == TRAIN_TOKENIZED:
             self.train_tokenized = None
         elif component_type == TRAIN_BATCHED:
@@ -263,6 +274,13 @@ class Components:
         self.losses = []
         self.translations = []
 
+    def set_special_token_ids(self):
+        self.bos_token_id = self.tokenizer.token_to_id(self.config.bos_token)
+        self.eos_token_id = self.tokenizer.token_to_id(self.config.eos_token)
+        self.pad_token_id = self.tokenizer.token_to_id(self.config.pad_token)
+        self.csp_token_id = self.tokenizer.token_to_id(self.config.csp_token)
+        self.eow_token_id = self.tokenizer.token_to_id(self.config.eow_token)
+
     def create_all(self):
         for type in self.types:
             self.create(type)
@@ -284,7 +302,7 @@ class Components:
         for ct in ComponentType:
             self.clean(ct)
 
-    def status(self, component_type):
+    def component_status(self, component_type):
         def red(x):
             # ANSI escape characters for red
             return "\033[91m{}\033[00m".format(x)
@@ -346,7 +364,11 @@ class Components:
         max_name_length = max([len(i.name) for i in ComponentType])
         name_str_length = max_name_length + len(colon)
 
-        config_status = "  " + "config: ".ljust(name_str_length) + self.config.name + "\n"
-        device_status = "  " + "device: ".ljust(name_str_length) + self.config.device_string + "\n"
-        statuses = ["  " + self.status(ct) for ct in ComponentType]
+        config_status = (
+            "  " + "config: ".ljust(name_str_length) + self.config.name + "\n"
+        )
+        device_status = (
+            "  " + "device: ".ljust(name_str_length) + self.config.device_string + "\n"
+        )
+        statuses = ["  " + self.component_status(ct) for ct in ComponentType]
         return "Components:\n" + config_status + device_status + "\n".join(statuses)
