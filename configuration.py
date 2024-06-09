@@ -72,17 +72,26 @@ class BaseConfig:
     length_penalty_alpha = 0.6
 
 
-class SmallConfig(BaseConfig):
+class ToyConfig(BaseConfig):
     """Very small parameter values"""
 
+    name = "ToyConfig"
+
+    dataset_module = toy_dataset
+
+    d_model = 256
+    d_ff = 512
+    num_heads = 4
+    num_blocks = 2
+
+    max_translation_len = 50
+    train_steps = 100
+
+
+class SmallConfig(BaseConfig):
+    """Smaller than BaseConfig, but still uses the wmt14 data"""
+
     name = "SmallConfig"
-
-
-class SingleSentenceConfig(BaseConfig):
-    """Only one sentence pair in the train and test set.
-    Useful for testing the train loop quickly"""
-
-    name = "SingleSentenceConfig"
 
     d_model = 256
     d_ff = 512
@@ -108,4 +117,4 @@ class BigConfig(BaseConfig):
     name = "BigConfig"
 
 
-DEFAULT_CONFIG = SingleSentenceConfig()
+DEFAULT_CONFIG = ToyConfig()

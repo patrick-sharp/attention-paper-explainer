@@ -13,13 +13,7 @@ def test_model(components):
     test_batched = components.test_batched
     test_tokenized = components.test_tokenized
 
-    # test_dataloader = DataLoader(test_batched, batch_size=None, shuffle=True)
-    # test_dataloader = DataLoader(test_tokenized, batch_size=None, shuffle=True)
-    # test_dataloader = DataLoader(
-    #    components.train_tokenized, batch_size=None, shuffle=True
-    # )
-    train_raw = components.train_raw
-    test_dataloader = DataLoader(train_raw, batch_size=None, shuffle=True)
+    test_dataloader = DataLoader(test_batched, batch_size=None, shuffle=True)
 
     model.eval()
 
@@ -32,10 +26,9 @@ def test_model(components):
     pad_token_id = tokenizer.token_to_id(pad_token)
 
     for batch in test_dataloader:
-        batch = batch["translation"]
         # batch size always 1 here
-        source_text = batch["de"]
-        target_text = batch["en"]
+        source_text = batch["source_text"][0]
+        target_text = batch["target_text"][0]
 
         # encoder_input = torch.tensor(batch["de_tok"], dtype=torch.int32).unsqueeze(0)
         # source_mask = dataset.create_source_mask(encoder_input, pad_token_id)

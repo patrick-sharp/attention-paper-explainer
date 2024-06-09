@@ -13,6 +13,9 @@ import model
 de_0 = "Wiederaufnahme der Sitzungsperiode"
 en_0 = "Resumption of the session"
 
+de_0 = "Der Mann ging zum Markt. Der Weg dorthin dauerte dreißig Minuten. Dieser Satz ist nur ein Füllwort und hat keinen sinnvollen Inhalt. Er kaufte Lebensmittel."
+en_0 = "The man went to the market. The journey there took thirty minutes. This sentence is just filler, and has no meaningful content. He bought groceries."
+
 
 def prettify(config, translation):
     """strip the word-delimiting special characters (csp, eow) out of the translation so it looks nicer"""
