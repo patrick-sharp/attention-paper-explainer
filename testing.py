@@ -45,4 +45,6 @@ def test_model(components):
     bleu = metric.update(predicted_text, expected_text)
     bleu = metric.compute()
 
-    return bleu.item()
+    expected_text = [e[0] for e in expected_text]
+
+    return bleu.item(), expected_text, predicted_text

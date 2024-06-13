@@ -60,22 +60,22 @@ def rf():
 
 
 # sample forward pass for the model
-def summary(idx=0):
+def summary():
     transformer = model.Transformer(cmp)
 
     input_data = [
-        cmp.train_batched[idx]["encoder_input"],
-        cmp.train_batched[idx]["decoder_input"],
-        cmp.train_batched[idx]["source_mask"],
-        cmp.train_batched[idx]["target_mask"],
+        cmp.train_batched[0]["encoder_input"],
+        cmp.train_batched[0]["decoder_input"],
+        cmp.train_batched[0]["source_mask"],
+        cmp.train_batched[0]["target_mask"],
     ]
 
     print(torchinfo.summary(transformer, input_data=input_data, dtypes=[torch.int32]))
 
 
 # translate
-def translate():
-    translation.main([None])
+def translate(sentence=None):
+    translation.main(sentence)
 
 
 # train model
@@ -89,8 +89,12 @@ def train():
 # this is a number between 0.0 and 1.0
 def test():
     cmp.init_all()
-    bleu_score = testing.test_model(cmp)
+    bleu_score, expected, predicted = testing.test_model(cmp)
     print("BLEU score:", bleu_score)
+    for e, p in zip(expected, predicted):
+        print(e)
+        print(p)
+        print()
 
 
 # plot a color mesh of the positional encodings

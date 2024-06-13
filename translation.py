@@ -215,16 +215,11 @@ def print_comparison(sentence, reference_translation, translations):
         print(f'{ppl: 7.3f} "{x}"')
 
 
-def main(argv):
-    if len(sys.argv) == 1:
-        # sentence from the wmt14 test set
+def main(sentence):
+    reference_translation = None
+    if sentence is None:
         sentence = de_0
         reference_translation = en_0
-    elif len(sys.argv) == 2:
-        sentence = sys.argv[1]
-    else:
-        print("Too many arguments")
-        return
 
     cmp = components.Components(DEFAULT_CONFIG)
 
@@ -241,4 +236,9 @@ def main(argv):
 
 
 if __name__ == "__main__":
-    main(sys.argv)
+    if len(sys.argv) == 1:
+        main()
+    elif len(sys.argv) == 2:
+        main(sys.argv[1])
+    else:
+        print("Too many arguments")

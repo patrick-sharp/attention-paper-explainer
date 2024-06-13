@@ -79,13 +79,15 @@ class ToyConfig(BaseConfig):
 
     dataset_module = toy_dataset
 
-    d_model = 256
+    d_model = 128
     d_ff = 512
-    num_heads = 4
+    num_heads = 2
+    d_key = 64
+    d_value = 64
     num_blocks = 2
 
     max_translation_len = 50
-    train_steps = 100
+    train_steps = 250
 
 
 class SmallConfig(BaseConfig):
