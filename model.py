@@ -64,8 +64,12 @@ class PositionalEncoding(nn.Module):
 
 
 class MultiHeadAttention(nn.Module):
-    def __init__(self, config):
+    def __init__(self, config, stack=None, layer=None):
         super().__init__()
+
+        # used for the instrumentation for making attention plots
+        self.stack = stack
+        self.layer = layer
 
         # we'll need some values from here in the forward pass
         self.config = config
@@ -96,7 +100,7 @@ class MultiHeadAttention(nn.Module):
         # not sure why there's a difference, but there you go.
         self.dropout = nn.Dropout(p_dropout)
 
-    def forward(self, query, key, value, mask):
+    def forward(self, query, key, value, mask, instrumentation=None):
         # For encoder self attention:
         # query, key, and value are all the same
         # mask is the source mask
@@ -125,7 +129,6 @@ class MultiHeadAttention(nn.Module):
         d_key = self.config.d_key
         d_value = self.config.d_value
         num_heads = self.config.num_heads
-        bias = self.config.bias
         p_dropout = self.config.p_dropout
 
         # calculate the queries, keys, and values for all heads at once
@@ -206,6 +209,18 @@ class MultiHeadAttention(nn.Module):
         # softmax to get probabilities
         x = functional.softmax(x, dim=-1)
         # right here is where karpathy would insert the other dropout
+
+        # if we passed in an instrumentation map to the model, store
+        # attention scores in it for later plotting
+        if (
+            self.stack == "encoder"
+            and instrumentation is not None
+            and instrumentation["layer"] == self.layer
+        ):
+            head = instrumentation["head"]
+            # (seq_len, seq_len)
+            attention = x[0, head, :, :].detach()
+            instrumentation["attention"] = attention
 
         # multiply the attention scores by the value vectors and sum them
         # (batch_size, num_heads, q_seq_len, d_value)
@@ -303,17 +318,17 @@ class LayerNorm(nn.Module):
 
 
 class EncoderBlock(nn.Module):
-    def __init__(self, config):
+    def __init__(self, config, layer=None):
         super().__init__()
-        self.attention = MultiHeadAttention(config)
+        self.attention = MultiHeadAttention(config, stack="encoder", layer=layer)
         self.layer_norm_1 = LayerNorm(config)
 
         self.feed_forward = FeedForward(config)
         self.layer_norm_2 = LayerNorm(config)
 
-    def forward(self, x, mask):
+    def forward(self, x, mask, instrumentation=None):
         residual = x
-        x = self.attention(x, x, x, mask)
+        x = self.attention(x, x, x, mask, instrumentation)
         x = self.layer_norm_1(x + residual)
 
         residual = x
@@ -325,16 +340,16 @@ class EncoderBlock(nn.Module):
 class Encoder(nn.Module):
     def __init__(self, config):
         super().__init__()
-        blocks = [EncoderBlock(config) for _ in range(config.num_blocks)]
+        blocks = [EncoderBlock(config, i) for i in range(config.num_blocks)]
         self.layers = nn.ModuleList(blocks)
 
-    def forward(self, x, mask):
+    def forward(self, x, mask, instrumentation):
         # x is (batch_size, seq_len, d_model)
         # mask is (batch_size, 1, 1, seq_len)
 
         for layer in self.layers:
             # (batch_size, seq_len, d_model)
-            x = layer(x, mask)
+            x = layer(x, mask, instrumentation)
 
         return x
 
@@ -421,10 +436,10 @@ class Transformer(nn.Module):
         self.projection_layer = ProjectionLayer(components)
         self.to(components.device)
 
-    def encode(self, encoder_input, mask):
+    def encode(self, encoder_input, mask, instrumentation=None):
         x = self.source_embedding(encoder_input)
         x = self.positional_encoding(x)
-        x = self.encoder(x, mask)
+        x = self.encoder(x, mask, instrumentation)
         return x
 
     def decode(self, decoder_input, encoder_output, source_mask, target_mask):

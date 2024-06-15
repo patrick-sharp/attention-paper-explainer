@@ -13,7 +13,7 @@ def test_model(components):
     test_batched = components.test_batched
     test_tokenized = components.test_tokenized
 
-    test_dataloader = DataLoader(test_batched, batch_size=None, shuffle=True)
+    test_dataloader = DataLoader(test_batched, batch_size=None)
 
     model.eval()
 

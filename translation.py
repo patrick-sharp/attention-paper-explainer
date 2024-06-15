@@ -9,12 +9,16 @@ from configuration import DEFAULT_CONFIG
 import components
 import dataset
 import model
+import masking
 
 de_0 = "Wiederaufnahme der Sitzungsperiode"
 en_0 = "Resumption of the session"
 
 de_0 = "Der Mann ging zum Markt. Der Weg dorthin dauerte dreißig Minuten. Dieser Satz ist nur ein Füllwort und hat keinen sinnvollen Inhalt. Er kaufte Lebensmittel."
 en_0 = "The man went to the market. The journey there took thirty minutes. This sentence is just filler, and has no meaningful content. He bought groceries."
+
+de_1 = "Die Frau ging zum Park. Sie kaufte nichts gekauft."
+en_1 = "The woman went to the park. She bought nothing."
 
 
 def prettify(config, translation):
@@ -44,10 +48,10 @@ def translate_beam_search(components, sentence):
 
     model.eval()
 
-    tokens = tokenizer.encode(sentence).ids
+    token_ids = tokenizer.encode(sentence).ids
 
     # add a batch_size dimension of 1
-    encoder_input = torch.tensor(tokens).unsqueeze(0)
+    encoder_input = torch.tensor(token_ids).unsqueeze(0)
 
     source_mask = dataset.create_source_mask(encoder_input, pad_token_id)
     encoder_output = model.encode(encoder_input, source_mask)
@@ -159,12 +163,12 @@ def translate_single(components, sentence):
 
     model.eval()
 
-    tokens = tokenizer.encode(sentence).ids
+    token_ids = tokenizer.encode(sentence).ids
 
     # add a batch_size dimension of 1
-    encoder_input = torch.tensor(tokens).unsqueeze(0)
+    encoder_input = torch.tensor(token_ids).unsqueeze(0)
 
-    source_mask = dataset.create_source_mask(encoder_input, pad_token_id)
+    source_mask = masking.create_source_mask(encoder_input, pad_token_id)
     encoder_output = model.encode(encoder_input, source_mask)
     decoder_input = torch.empty(1, 1, dtype=torch.int32).fill_(bos_token_id)
 
