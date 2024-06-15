@@ -218,8 +218,8 @@ def print_comparison(sentence, reference_translation, translations):
 def main(sentence):
     reference_translation = None
     if sentence is None:
-        sentence = de_0
-        reference_translation = en_0
+        sentence = en_0
+        reference_translation = de_0
 
     cmp = components.Components(DEFAULT_CONFIG)
 

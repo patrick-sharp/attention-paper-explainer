@@ -66,10 +66,10 @@ class ToyDatasetTrain(Dataset):
         en_padded = [pad(item["en_tok"], en_len) for item in tokenized_dataset]
 
         # (1, seq_len)
-        encoder_input = torch.tensor(de_padded, dtype=torch.int32)
+        decoder_input = torch.tensor(de_padded, dtype=torch.int32)
 
         # (1, seq_len)
-        decoder_input = torch.tensor(en_padded, dtype=torch.int32)
+        encoder_input = torch.tensor(en_padded, dtype=torch.int32)
 
         # (1, 1, 1, seq_len)
         source_mask = masking.create_source_mask(encoder_input, pad_token_id)
@@ -133,10 +133,10 @@ class ToyDatasetTest(Dataset):
             en_padded = [pad(item["en_tok"], en_len)]
 
             # (1, seq_len)
-            encoder_input = torch.tensor(de_padded, dtype=torch.int32)
+            decoder_input = torch.tensor(de_padded, dtype=torch.int32)
 
             # (1, seq_len)
-            decoder_input = torch.tensor(en_padded, dtype=torch.int32)
+            encoder_input = torch.tensor(en_padded, dtype=torch.int32)
 
             # (1, 1, 1, seq_len)
             source_mask = masking.create_source_mask(encoder_input, pad_token_id)
@@ -161,8 +161,8 @@ class ToyDatasetTest(Dataset):
                     "target_mask": target_mask,
                     # (batch_size, en_seq_len-1)
                     "label": label,
-                    "source_text": [item["de"]],
-                    "target_text": [item["en"]],
+                    "source_text": [item["en"]],
+                    "target_text": [item["de"]],
                 }
             )
 
