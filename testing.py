@@ -30,11 +30,8 @@ def test_model(components):
         source_text = batch["source_text"][0]
         target_text = batch["target_text"][0]
 
-        # encoder_input = torch.tensor(batch["de_tok"], dtype=torch.int32).unsqueeze(0)
-        # source_mask = dataset.create_source_mask(encoder_input, pad_token_id)
-
         # bleu expects multiple expected translations, so make a singleton list.
-        # the wmt14 dataset only has one english translation per german sentence
+        # the toy and wmt14 datasets only has one german translation per english sentence
         expected_text.append([target_text])
         # translation = translate_tensor(components, encoder_input, source_mask)
         _, translation = translate_single(components, source_text)

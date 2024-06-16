@@ -11,9 +11,6 @@ import dataset
 import model
 import masking
 
-de_0 = "Wiederaufnahme der Sitzungsperiode"
-en_0 = "Resumption of the session"
-
 de_0 = "Der Mann ging zum Markt. Der Weg dorthin dauerte dreißig Minuten. Dieser Satz ist nur ein Füllwort und hat keinen sinnvollen Inhalt. Er kaufte Lebensmittel."
 en_0 = "The man went to the market. The journey there took thirty minutes. This sentence is just filler, and has no meaningful content. He bought groceries."
 
@@ -53,7 +50,7 @@ def translate_beam_search(components, sentence):
     # add a batch_size dimension of 1
     encoder_input = torch.tensor(token_ids).unsqueeze(0)
 
-    source_mask = dataset.create_source_mask(encoder_input, pad_token_id)
+    source_mask = masking.create_source_mask(encoder_input, pad_token_id)
     encoder_output = model.encode(encoder_input, source_mask)
 
     # length normalization from Wu et. al paper
@@ -62,6 +59,7 @@ def translate_beam_search(components, sentence):
 
     translation_len = 0
     # negative log perplexity
+    scores = []
     perplexities = [0.0 for _ in range(beam_width)]
     decoder_inputs = []
     for _ in range(beam_width):
@@ -69,6 +67,8 @@ def translate_beam_search(components, sentence):
         start.fill_(bos_token_id)
         decoder_inputs.append(start)
 
+    # we don't predict new tokens if we've already predicted an EOS character for a sentence
+    ended_scores = []
     ended_perplexities = []
     ended_decoder_inputs = []
 
@@ -78,7 +78,7 @@ def translate_beam_search(components, sentence):
         # compute predictions for each item in the beam
         beam_probabilities = []
         for decoder_input in decoder_inputs:
-            target_mask = dataset.create_target_mask(decoder_input, pad_token_id)
+            target_mask = masking.create_target_mask(decoder_input, pad_token_id)
 
             # (1, dec_seq_len, vocab_size)
             projection = model.decode(
@@ -86,10 +86,10 @@ def translate_beam_search(components, sentence):
             )
 
             # (vocab_size)
-            logits = projection[0, -1, :]
+            token_logits = projection[0, -1, :]
 
             # (vocab_size)
-            probabilities = softmax(logits, dim=0)
+            probabilities = softmax(token_logits, dim=0)
             beam_probabilities.append(probabilities)
 
         # we select translations based on their scores. the score is based on the
@@ -104,7 +104,7 @@ def translate_beam_search(components, sentence):
             probabilities = beam_probabilities[i]
             scores = ppl - torch.log(probabilities)
             scores /= length_penalty
-            scores = scores.unsqueeze(-1)  # so we can cat them on dim 1
+            scores = scores.unsqueeze(1)  # so we can cat them on dim 1
             beam_scores.append(scores)
         # (vocab_size, len(decoder_inputs))
         beam_scores = torch.cat(beam_scores, dim=1)
@@ -175,7 +175,7 @@ def translate_single(components, sentence):
     perplexity = 0.0
 
     while decoder_input.shape[1] < max_translation_len:
-        target_mask = dataset.create_target_mask(decoder_input, pad_token_id)
+        target_mask = masking.create_target_mask(decoder_input, pad_token_id)
 
         # (1, dec_seq_len, vocab_size)
         projection = model.decode(

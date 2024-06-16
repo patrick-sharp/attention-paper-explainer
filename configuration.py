@@ -6,7 +6,7 @@ import torch
 
 import toy_dataset
 
-# this gets rid of an annoying error message about deadlocks
+# this gets rid of an annoying huggingface error message about deadlocks
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
 
@@ -15,8 +15,6 @@ class BaseConfig:
 
     name = "BaseConfig"
 
-    use_random_seed = True
-    random_seed = 0  # used for python standard lib and for pytorch
     components_folder = "components"  # stores cached components
 
     # Model params

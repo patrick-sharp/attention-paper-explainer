@@ -72,9 +72,6 @@ class Components:
         self.config = config
         self.device = torch.device(config.device_string)
 
-        if config.use_random_seed:
-            self.set_seeds()
-
         # allows us to access component types with reference equality in the train loop
         # and in single-sentence translation
         self.types = ComponentType
@@ -88,12 +85,6 @@ class Components:
         self.present = {component_type: False for component_type in ComponentType}
 
         self.load_all()
-
-    def set_seeds(self):
-        """Keep in mind that the torch generator doesn't reset unless you exit and restart the repl."""
-        seed = self.config.random_seed
-        random.seed(seed)
-        torch.manual_seed(seed)
 
     def cached(self, component_type):
         """return whether a cached version of this component exists"""

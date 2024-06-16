@@ -31,7 +31,7 @@ def set_component_enum():
         globals()[component_type.name] = component_type
 
 
-def repl_state():
+def repl_state(rng_state=None):
     global config
     global cmp
     set_component_enum()
@@ -41,7 +41,6 @@ def repl_state():
 
 
 repl_state()
-
 
 def rf():
     """refresh: re-import recent changes in the project into the repl"""
@@ -56,6 +55,7 @@ def rf():
     importlib.reload(training)
     importlib.reload(testing)
     importlib.reload(dynamic_batched_dataset)
+    # when refreshing the repl, reset the torch rng
     repl_state()
 
 
