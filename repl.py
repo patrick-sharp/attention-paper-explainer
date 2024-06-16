@@ -92,8 +92,8 @@ def test():
     bleu_score, expected, predicted = testing.test_model(cmp)
     print("BLEU score:", bleu_score)
     for e, p in zip(expected, predicted):
-        print(e)
-        print(p)
+        print("expected: ", e)
+        print("predicted:", p)
         print()
 
 
@@ -101,13 +101,13 @@ def test():
 def plot_positional_encodings():
     """This code is from Jay Alammar"""
 
-    if not cmp.present(MODEL_TRAIN_STATE):
+    if not cmp.present[MODEL_TRAIN_STATE]:
         cmp.create(MODEL_TRAIN_STATE)
 
     tokens = 10
 
     # (10, d_model)
-    pos_encoding = cmp.model.positional_encoding.positional_encodings[0, 0:tokens, :]
+    pos_encoding = cmp.model.positional_encoding.positional_encodings[0, 0:tokens, :].detach()
 
     plt.figure(figsize=(12, 8))
     plt.pcolormesh(pos_encoding, cmap="viridis")
@@ -175,6 +175,7 @@ def plot_encoder_attention(layer=0, head=0, sentence=translation.en_1):
     ax.set_title("Attention scores")
     fig.tight_layout()
     plt.show()
+    return attention
 
 
 def plot_embeddings():
@@ -188,8 +189,6 @@ def plot_embeddings():
     )
 
     import numpy as np
-
-    source = np.arange(0, 25).reshape((5, 5))
 
     fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(10, 10))
 

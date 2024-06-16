@@ -54,6 +54,7 @@ class PositionalEncoding(nn.Module):
         # Register the positional encoding as a buffer
         self.register_buffer("positional_encodings", positional_encodings)
 
+
     def forward(self, x):
         _, seq_len, _ = x.shape
         # broadcasts addition over all sequences in batch

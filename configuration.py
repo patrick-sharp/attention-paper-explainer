@@ -6,6 +6,9 @@ import torch
 
 import toy_dataset
 
+# this gets rid of an annoying error message about deadlocks
+os.environ["TOKENIZERS_PARALLELISM"] = "false"
+
 
 class BaseConfig:
     """The base parameter values from the paper"""
@@ -78,16 +81,17 @@ class ToyConfig(BaseConfig):
     name = "ToyConfig"
 
     dataset_module = toy_dataset
-
-    d_model = 128
-    d_ff = 512
-    num_heads = 2
-    d_key = 64
-    d_value = 64
-    num_blocks = 2
-
     max_translation_len = 50
-    train_steps = 250
+
+    d_model = 64
+    d_ff = 256
+    num_heads = 4
+    d_key = 16
+    d_value = 16
+    num_blocks = 1
+
+    train_steps = 115
+    adam_learning_rate = 1e-3
 
 
 class SmallConfig(BaseConfig):
