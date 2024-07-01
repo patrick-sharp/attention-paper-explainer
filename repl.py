@@ -75,7 +75,7 @@ def summary():
 
 
 # translate
-def translate(cmp, sentence=None):
+def translate(sentence=None):
     translation.translate(cmp, sentence)
 
 
