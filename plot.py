@@ -5,6 +5,7 @@ from global_state import config, cmp
 import masking
 import translation
 
+
 # plot a color mesh of the positional encodings
 def positional_encodings():
     """This code is from Jay Alammar"""
@@ -15,7 +16,9 @@ def positional_encodings():
     tokens = 10
 
     # (10, d_model)
-    pos_encoding = cmp.model.positional_encoding.positional_encodings[0, 0:tokens, :].detach()
+    pos_encoding = cmp.model.positional_encoding.positional_encodings[
+        0, 0:tokens, :
+    ].detach()
 
     plt.figure(figsize=(12, 8))
     plt.pcolormesh(pos_encoding, cmap="viridis")

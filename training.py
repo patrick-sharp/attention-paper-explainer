@@ -133,8 +133,3 @@ def train_model(components):
                     "translations": translations,
                 },
             )
-
-
-if __name__ == "__main__":
-    cmp = components.Components(DEFAULT_CONFIG)
-    train_transformer(cmp)

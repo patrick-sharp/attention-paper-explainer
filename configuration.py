@@ -19,8 +19,8 @@ class BaseConfig:
 
     # Model params
     device_string = "cpu"  # what pytorch backend to use (cpu, cuda, mkl, mps, etc.)
-    model_int = torch.int32
-    model_float = torch.float32
+    int_type = torch.int32
+    float_type = torch.float32
     max_seq_len = 1500  # maximum length of input sequence the model will accept
     max_translation_len = max_seq_len  # maximum length of output translation
     num_blocks = 6  # number of blocks in decoder and encoder each

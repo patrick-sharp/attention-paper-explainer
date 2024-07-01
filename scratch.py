@@ -10,6 +10,7 @@ import time
 
 import torch
 import torch.nn as nn
+from torch.nn.functional import softmax
 import torchinfo
 from tqdm import tqdm
 import matplotlib.pyplot as plt
@@ -71,3 +72,40 @@ def tok(cmp):
     sentence = cmp.test_raw[0]["translation"]["de"]
     ref = cmp.test_raw[0]["translation"]["en"]
     return cmp.tokenizer.encode(ref)
+
+
+def scrp():
+    a = torch.arange(64).reshape(8, 8)
+    b = a + 13
+    v, i = torch.topk(b.flatten(), 4)
+    rows, cols = b.shape
+    ri = i // rows
+    ci = i % cols
+    items = b[ri, ci]
+
+    print(items)
+
+
+def soft():
+    a = torch.arange(64, dtype=torch.double).reshape(8, 8)
+    b = softmax(a, dim=1)
+    b.shape[1] += 1
+    print(b)
+
+
+def kwa():
+    def f(a, b, c):
+        print(a, b, c)
+
+    d = {"a": 0, "b": 1, "c": 2}
+    f(**d)
+    d = {"a": 0, "b": 1, "c": 2, "wacka": 3}
+    f(**d)
+
+
+def srt():
+    a = [{"x": 0}, {"x": 1}, {"x": -40}]
+    a.sort(key=lambda x: x["x"], reverse=True)
+    b = sorted(a, key=lambda x: x["x"])
+    print(a)
+    print(b)

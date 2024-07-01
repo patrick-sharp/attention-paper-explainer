@@ -2,11 +2,12 @@ import math
 import re
 import sys
 
+from dataclasses import dataclass
+
 import torch
 from torch.nn.functional import softmax
 
 from configuration import DEFAULT_CONFIG
-import components
 import dataset
 import model
 import masking
@@ -25,8 +26,17 @@ def prettify(config, translation):
     # cleaup spaces between words and punctuation
     # the whitespace pre-tokenizer splits on r"\w+|[^\w\s]+"
     # each match for that regex in the input sentence will be a token
-    translation = re.sub(" ([^\w\s])", "\\1", translation)
+    translation = re.sub(r" ([^\w\s])", r"\1", translation)
     return translation
+
+
+# a candidate translation in the beam search
+@dataclass
+class Candidate:
+    token_ids: torch.Tensor
+    neg_log_ppl: float
+    score: float
+    in_progress: bool
 
 
 def translate_beam_search(components, sentence):
@@ -35,6 +45,7 @@ def translate_beam_search(components, sentence):
     config = components.config
     tokenizer = components.tokenizer
     model = components.model
+    int_type = config.int_type
     max_translation_len = config.max_translation_len
     bos_token_id = components.bos_token_id
     eos_token_id = components.eos_token_id
@@ -54,98 +65,123 @@ def translate_beam_search(components, sentence):
     encoder_output = model.encode(encoder_input, source_mask)
 
     # length normalization from Wu et. al paper
-    def lp(length, alpha):
+    # increases with length.
+    # we use this to give longer sentences a better shot against shorter ones.
+    def length_penalty(length, alpha):
         return ((5.0 + length) / 6.0) ** alpha
 
+    # the score by which to judge different candidate translations
+    # lower is better
+    def compute_score(neg_log_ppl, length):
+        lp = length_penalty(length, length_penalty_alpha)
+        return neg_log_ppl / lp
+
+    # these are both lists of tuples of (token id tensor, negative log perplexity).
+    # negative log perplexity is -log(perplexity)
+    # higher perplexity = more confidence
+    # higher negative log perplexity = less confidence
+
+    start = torch.empty(1, 1, dtype=torch.int32)
+    start.fill_(bos_token_id)
+
+    # start with only one entry so that beams are guaranteed to be unique
+    in_progress = [Candidate(start, 0.0, 0.0, True)]
+    ended = []
+
     translation_len = 0
-    # negative log perplexity
-    scores = []
-    perplexities = [0.0 for _ in range(beam_width)]
-    decoder_inputs = []
-    for _ in range(beam_width):
-        start = torch.empty(1, 1, dtype=torch.int32)
-        start.fill_(bos_token_id)
-        decoder_inputs.append(start)
-
-    # we don't predict new tokens if we've already predicted an EOS character for a sentence
-    ended_scores = []
-    ended_perplexities = []
-    ended_decoder_inputs = []
-
-    while len(decoder_inputs) > 0 and translation_len < max_translation_len:
+    while len(in_progress) > 0 and translation_len < max_translation_len:
         translation_len += 1
 
-        # compute predictions for each item in the beam
-        beam_probabilities = []
-        for decoder_input in decoder_inputs:
-            target_mask = masking.create_target_mask(decoder_input, pad_token_id)
+        tensors = [c.token_ids for c in in_progress]
 
-            # (1, dec_seq_len, vocab_size)
-            projection = model.decode(
-                decoder_input, encoder_output, source_mask, target_mask
+        # batch_size, dec_seq_len
+        decoder_input = torch.cat(tensors, dim=0)
+
+        # the encoder input and source mask are for a batch size of 1.
+        # the batch size here will be the number of in progress sentences,
+        # so we repeat the encoder output and source mask along the first dimension
+        batch_size = len(in_progress)
+        encoder_output_batch = encoder_output.expand(batch_size, -1, -1)
+        source_mask_batch = source_mask.expand(batch_size, -1, -1, -1)
+
+        # (batch_size, 1, dec_seq_len, dec_seq_len)
+        target_mask = masking.create_target_mask(decoder_input, pad_token_id)
+        # (batch_size, dec_seq_len, vocab_size)
+        projection = model.decode(
+            decoder_input, encoder_output_batch, source_mask_batch, target_mask
+        )
+        # where you left off, just getting the dimension repeat to work
+
+        # un-softmaxed logits for the predictions of the next token
+        # (batch_size, vocab_size)
+        logits = projection[:, -1, :]
+
+        # (batch_size, vocab_size)
+        probabilities = softmax(logits, dim=1)
+
+        # we'll need this for getting the top results
+        _, vocab_size = probabilities.shape
+
+        # idxs shape is (beam_width)
+        vals, idxs = torch.topk(probabilities.flatten(), beam_width)
+
+        # the beams the predicted token ids are for.
+        # (beam_width)
+        sentence_idxs = idxs // vocab_size
+
+        # the predicted token ids
+        # (beam_width)
+        next_token_ids = idxs % vocab_size
+
+        # now we need to select the best candidate sentences from the already ended
+        # sentences and the newly predicted topk sentences
+        candidates = []
+        for i in range(beam_width):
+            sentence_idx = sentence_idxs[i]
+            next_token_id = next_token_ids[i]
+
+            # append the predicted token onto the sentence
+            cand = in_progress[sentence_idx]
+            _, dec_seq_len = cand.token_ids.shape
+            with_next = torch.empty((1, dec_seq_len + 1), dtype=int_type)
+            with_next[0, 0:dec_seq_len] = cand.token_ids
+            with_next[0, -1] = next_token_id
+
+            # compute the negative log perplexity and the score of the new candidate
+            next_token_probability = probabilities[sentence_idx, next_token_id]
+            next_neg_log_ppl = cand.neg_log_ppl - math.log(next_token_probability)
+            score = compute_score(next_neg_log_ppl, dec_seq_len + 1)
+            # True because this is an in progress sentence
+            is_in_progress = next_token_id.item() != eos_token_id
+            candidates.append(
+                Candidate(with_next, next_neg_log_ppl, score, is_in_progress)
             )
 
-            # (vocab_size)
-            token_logits = projection[0, -1, :]
+        # the ended sentences are candidates too.
+        # if any new candidates are better than them, unseat them
+        for cand in ended:
+            candidates.append(cand)
 
-            # (vocab_size)
-            probabilities = softmax(token_logits, dim=0)
-            beam_probabilities.append(probabilities)
+        # sort by score
+        candidates.sort(key=lambda x: x.score)
 
-        # we select translations based on their scores. the score is based on the
-        # perplexity, but adjusted slightly.
-        # without this adjustment, longer translations are disfavored because they have
-        # more terms in the perplexity calculation.
-        # scores(prev_ppl, pred, length) = (prev_ppl + ln(pred))/lp(length)
-        length_penalty = lp(translation_len, length_penalty_alpha)
-        beam_scores = []
-        for i in range(len(decoder_inputs)):
-            ppl = perplexities[i]
-            probabilities = beam_probabilities[i]
-            scores = ppl - torch.log(probabilities)
-            scores /= length_penalty
-            scores = scores.unsqueeze(1)  # so we can cat them on dim 1
-            beam_scores.append(scores)
-        # (vocab_size, len(decoder_inputs))
-        beam_scores = torch.cat(beam_scores, dim=1)
-        # (vocab_size)
-        superscored, superscored_i = torch.min(beam_scores, dim=1)
-        vals, inds = torch.topk(superscored, len(decoder_inputs), largest=False)
+        # take the top beam_width candidates
+        candidates = candidates[0:beam_width]
 
-        next_decoder_inputs = []
-        next_perplexities = []
-        for token_id in inds.tolist():
-            beam_i = superscored_i[i]
-            next_token_tensor = torch.empty(1, 1).fill_(token_id)
-            decoder_input = decoder_inputs[beam_i]
-            decoder_input = torch.cat(
-                [decoder_input, next_token_tensor],
-                dim=1,
-            ).int()
-            prev_perplexity = perplexities[beam_i]
-            probabilities = beam_probabilities[beam_i]
-            probability = probabilities[token_id].item()
-            perplexity = prev_perplexity - math.log(probability)
-            if token_id == eos_token_id or translation_len == max_translation_len:
-                ended_decoder_inputs.append(decoder_input)
-                ended_perplexities.append(perplexity)
-            else:
-                next_decoder_inputs.append(decoder_input)
-                next_perplexities.append(perplexity)
-        decoder_inputs = next_decoder_inputs
-        perplexities = next_perplexities
+        # separate in progress from ended
+        in_progress = [cand for cand in candidates if cand.in_progress]
+        ended = [cand for cand in candidates if not cand.in_progress]
+
+    candidates = in_progress + ended
+    candidates.sort(key=lambda x: x.score)
 
     translations = []
-    for ppl, decoder_input in zip(ended_perplexities, ended_decoder_inputs):
-        translation = tokenizer.decode(decoder_input[0].tolist())
+    for cand in candidates:
+        translation = tokenizer.decode(cand.token_ids[0].tolist())
         prettified = prettify(config, translation)
-        translations.append((ppl, prettified))
+        translations.append((cand.neg_log_ppl, prettified))
 
-    # sort by perplexity so we show the best guesses first
-    def sort_ppl(x):
-        return x[0]
-
-    return list(sorted(translations, key=sort_ppl))
+    return translations
 
 
 def translate_single(components, sentence):
@@ -207,6 +243,7 @@ def translate_single(components, sentence):
 
 
 def print_comparison(sentence, reference_translation, translations):
+    """translations should be a tuple of (float, string)"""
     print("Translating:")
     print(f'"{sentence}"')
     print()
@@ -219,30 +256,23 @@ def print_comparison(sentence, reference_translation, translations):
         print(f'{ppl: 7.3f} "{x}"')
 
 
-def main(sentence):
+def translate(components, sentence=None, use_beam_search=True):
     reference_translation = None
     if sentence is None:
         sentence = en_0
         reference_translation = de_0
 
-    cmp = components.Components(DEFAULT_CONFIG)
+    TOKENIZER = components.types.TOKENIZER
+    MODEL_TRAIN_STATE = components.types.MODEL_TRAIN_STATE
 
-    TOKENIZER = cmp.types.TOKENIZER
-    MODEL_TRAIN_STATE = cmp.types.MODEL_TRAIN_STATE
+    if not components.present[TOKENIZER]:
+        components.create(TOKENIZER)
+    if not components.present[MODEL_TRAIN_STATE]:
+        components.create(MODEL_TRAIN_STATE)
 
-    if not cmp.present[TOKENIZER]:
-        cmp.create(TOKENIZER)
-    if not cmp.present[MODEL_TRAIN_STATE]:
-        cmp.create(MODEL_TRAIN_STATE)
-
-    translations = translate_beam_search(cmp, sentence)
-    print_comparison(sentence, reference_translation, translations)
-
-
-if __name__ == "__main__":
-    if len(sys.argv) == 1:
-        main()
-    elif len(sys.argv) == 2:
-        main(sys.argv[1])
+    if use_beam_search:
+        translations = translate_beam_search(components, sentence)
     else:
-        print("Too many arguments")
+        translation = [translate_single(components, sentence)]
+
+    print_comparison(sentence, reference_translation, translations)

@@ -42,6 +42,7 @@ def repl_state(rng_state=None):
 
 repl_state()
 
+
 def rf():
     """refresh: re-import recent changes in the project into the repl"""
     importlib.reload(configuration)
@@ -74,8 +75,8 @@ def summary():
 
 
 # translate
-def translate(sentence=None):
-    translation.main(sentence)
+def translate(cmp, sentence=None):
+    translation.translate(cmp, sentence)
 
 
 # train model
@@ -107,7 +108,9 @@ def plot_positional_encodings():
     tokens = 10
 
     # (10, d_model)
-    pos_encoding = cmp.model.positional_encoding.positional_encodings[0, 0:tokens, :].detach()
+    pos_encoding = cmp.model.positional_encoding.positional_encodings[
+        0, 0:tokens, :
+    ].detach()
 
     plt.figure(figsize=(12, 8))
     plt.pcolormesh(pos_encoding, cmap="viridis")
