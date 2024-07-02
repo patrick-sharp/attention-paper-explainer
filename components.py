@@ -2,7 +2,6 @@ import os
 from enum import Enum, global_enum
 import pickle
 from pathlib import Path
-import random
 
 import torch
 from tokenizers import Tokenizer
@@ -212,7 +211,7 @@ class Components:
             self.clean(component_type)
 
     def init(self, component_type):
-        """Initialize component, preferring to retrieve from cache"""
+        """If a component is not initialized, initialize it. Prefer to initialize from cache"""
         if not self.present[component_type]:
             if self.cached(component_type):
                 self.load(component_type)

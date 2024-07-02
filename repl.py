@@ -35,7 +35,7 @@ def repl_state(rng_state=None):
     global config
     global cmp
     set_component_enum()
-    config = configuration.DEFAULT_CONFIG
+    config = configuration.CONFIG
     cmp = components.Components(config)
     print(cmp)
 
@@ -80,8 +80,18 @@ def translate(sentence=None):
 
 
 # train model
-def train():
-    cmp.init_all()
+def train(fresh=True):
+    cmp.init(TOKENIZER)
+    cmp.init(TRAIN_BATCHED)
+    if fresh:
+        # reset random seeds to make training from the repl consistent as long as you're
+        # training a fresh model
+        random.seed(0)
+        torch.manual_seed(0)
+        cmp.create(MODEL_TRAIN_STATE)
+    else:
+        cmp.init(MODEL_TRAIN_STATE)
+
     training.train_model(cmp)
 
 
@@ -120,6 +130,9 @@ def plot_positional_encodings():
     plt.ylabel("Token Position")
     plt.colorbar()
     plt.show()
+
+
+# Plotting functions
 
 
 # plot a graph of the current loss

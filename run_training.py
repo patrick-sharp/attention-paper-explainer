@@ -1,6 +1,6 @@
-from configuration import DEFAULT_CONFIG
+from configuration import CONFIG
 from components import Components
 from training import train_transformer
 
-cmp = components.Components(DEFAULT_CONFIG)
+cmp = components.Components(CONFIG)
 train_transformer(cmp)

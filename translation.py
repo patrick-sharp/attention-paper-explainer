@@ -7,7 +7,6 @@ from dataclasses import dataclass
 import torch
 from torch.nn.functional import softmax
 
-from configuration import DEFAULT_CONFIG
 import dataset
 import model
 import masking
@@ -45,7 +44,6 @@ def translate_beam_search(components, sentence):
     config = components.config
     tokenizer = components.tokenizer
     model = components.model
-    int_type = config.int_type
     max_translation_len = config.max_translation_len
     bos_token_id = components.bos_token_id
     eos_token_id = components.eos_token_id
@@ -143,7 +141,7 @@ def translate_beam_search(components, sentence):
             # append the predicted token onto the sentence
             cand = in_progress[sentence_idx]
             _, dec_seq_len = cand.token_ids.shape
-            with_next = torch.empty((1, dec_seq_len + 1), dtype=int_type)
+            with_next = torch.empty((1, dec_seq_len + 1), dtype=torch.int32)
             with_next[0, 0:dec_seq_len] = cand.token_ids
             with_next[0, -1] = next_token_id
 
@@ -208,7 +206,7 @@ def translate_single(components, sentence):
     encoder_output = model.encode(encoder_input, source_mask)
     decoder_input = torch.empty(1, 1, dtype=torch.int32).fill_(bos_token_id)
 
-    perplexity = 0.0
+    neg_log_ppl = 0.0
 
     while decoder_input.shape[1] < max_translation_len:
         target_mask = masking.create_target_mask(decoder_input, pad_token_id)
@@ -225,7 +223,7 @@ def translate_single(components, sentence):
         # get the index of the highest prediction value
         probability, next_token_id = torch.max(probabilities, dim=0)
         next_token_id = next_token_id.item()
-        perplexity -= math.log(probability.item())
+        neg_log_ppl -= math.log(probability.item())
         next_token_tensor = torch.empty(1, 1).fill_(next_token_id)
 
         # (batch_size, dec_seq_len)
@@ -239,11 +237,11 @@ def translate_single(components, sentence):
 
     translation = tokenizer.decode(decoder_input[0].tolist())
 
-    return perplexity, prettify(config, translation)
+    return neg_log_ppl, prettify(config, translation)
 
 
 def print_comparison(sentence, reference_translation, translations):
-    """translations should be a tuple of (float, string)"""
+    """translations should be a tuple of (float, string). The float represents negative log perplexity"""
     print("Translating:")
     print(f'"{sentence}"')
     print()
@@ -262,13 +260,9 @@ def translate(components, sentence=None, use_beam_search=True):
         sentence = en_0
         reference_translation = de_0
 
-    TOKENIZER = components.types.TOKENIZER
-    MODEL_TRAIN_STATE = components.types.MODEL_TRAIN_STATE
-
-    if not components.present[TOKENIZER]:
-        components.create(TOKENIZER)
-    if not components.present[MODEL_TRAIN_STATE]:
-        components.create(MODEL_TRAIN_STATE)
+    # must have a tokenizer and a model
+    components.init(components.types.TOKENIZER)
+    components.init(components.types.MODEL_TRAIN_STATE)
 
     if use_beam_search:
         translations = translate_beam_search(components, sentence)

@@ -5,6 +5,7 @@ from pathlib import Path
 import torch
 
 import toy_dataset
+import dynamic_batched_dataset
 
 # this gets rid of an annoying huggingface error message about deadlocks
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
@@ -19,8 +20,6 @@ class BaseConfig:
 
     # Model params
     device_string = "cpu"  # what pytorch backend to use (cpu, cuda, mkl, mps, etc.)
-    int_type = torch.int32
-    float_type = torch.float32
     max_seq_len = 1500  # maximum length of input sequence the model will accept
     max_translation_len = max_seq_len  # maximum length of output translation
     num_blocks = 6  # number of blocks in decoder and encoder each
@@ -44,6 +43,7 @@ class BaseConfig:
     test_batched_filename = "test_batched.pkl"
 
     # wmt14 dataset params
+    huggingface_cache_dir = "huggingface_cache"
     max_tokens_in_batch = 10000
     train_sentence_pairs = 10000
     test_sentence_pairs = 1000
@@ -92,6 +92,25 @@ class ToyConfig(BaseConfig):
     adam_learning_rate = 1e-3
 
 
+class ToyDynamicBatchedConfig(BaseConfig):
+    """Very small parameter values"""
+
+    name = "ToyDynamicBatchedConfig"
+
+    dataset_module = dynamic_batched_dataset
+    max_translation_len = 50
+
+    d_model = 64
+    d_ff = 256
+    num_heads = 4
+    d_key = 16
+    d_value = 16
+    num_blocks = 1
+
+    train_steps = 115
+    adam_learning_rate = 1e-3
+
+
 class SmallConfig(BaseConfig):
     """Smaller than BaseConfig, but still uses the wmt14 data"""
 
@@ -121,4 +140,4 @@ class BigConfig(BaseConfig):
     name = "BigConfig"
 
 
-DEFAULT_CONFIG = ToyConfig()
+CONFIG = ToyDynamicBatchedConfig()

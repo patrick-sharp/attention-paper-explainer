@@ -7,7 +7,6 @@ from tqdm import tqdm
 
 import dataset
 import model
-from configuration import DEFAULT_CONFIG
 from keyboard_interrupt import DelayedKeyboardInterrupt
 from translation import translate_single
 
@@ -42,6 +41,11 @@ def benchmark_translations(components, examples):
 def train_model(components):
     config = components.config
 
+    # must have a tokenizer, a train dataset, and a model
+    components.init(components.types.TOKENIZER)
+    components.init(components.types.TRAIN_BATCHED)
+    components.init(components.types.MODEL_TRAIN_STATE)
+
     pad_token = config.pad_token
     label_smoothing_epsilon = config.label_smoothing_epsilon
 
@@ -52,9 +56,6 @@ def train_model(components):
     train_batched = components.train_batched
     examples = train_batched.examples
 
-    MODEL_TRAIN_STATE = components.types.MODEL_TRAIN_STATE
-    if not components.present[MODEL_TRAIN_STATE]:
-        components.create(MODEL_TRAIN_STATE)
     model = components.model
     optimizer = components.optimizer
     losses = components.losses
@@ -78,44 +79,44 @@ def train_model(components):
     for epoch in range(components.epoch, train_steps):
         model.train()  # switch back to training after running test benchmark
         batch_tqdm = tqdm(train_dataloader, desc=f"Epoch {epoch:04d}")
+        for batch in batch_tqdm:
+            encoder_input = batch["encoder_input"]
+            decoder_input = batch["decoder_input"]
+            source_mask = batch["source_mask"]
+            target_mask = batch["target_mask"]
+            label = batch["label"]
+
+            # (batch_size, seq_len, vocab_size)
+            output = model(encoder_input, decoder_input, source_mask, target_mask)
+
+            # flatten out predictions and labels because the loss function
+            # for class predictions expects 2D predictions and 1D labels
+
+            # (batch_size * seq_len, vocab_size)
+            loss_input = output.view(-1, vocab_size)
+
+            # (batch_size * seq_len)
+            # cross entropy expects a long, but loss_target defaults to int
+            loss_target = label.view(-1).long()
+
+            # compute the loss and the gradients of the model parameters
+            loss = loss_fn(loss_input, loss_target)
+            # print the loss after each batch
+            batch_tqdm.set_postfix({"loss": f"{loss.item():.3f}"})
+            # send the gradients to the model parameters
+            loss.backward()
+
+            # keep track of the loss for this batch
+            losses.append(loss.item())
+
+            # update model parameters
+            optimizer.step()
+            # set gradients to None so they don't affect the next batch
+            optimizer.zero_grad(set_to_none=True)
+
         # since we're altering model state, make sure you can't interrupt
         # the state mutation halfway through
         with DelayedKeyboardInterrupt():
-            for batch in batch_tqdm:
-                encoder_input = batch["encoder_input"]
-                decoder_input = batch["decoder_input"]
-                source_mask = batch["source_mask"]
-                target_mask = batch["target_mask"]
-                label = batch["label"]
-
-                # (batch_size, seq_len, vocab_size)
-                output = model(encoder_input, decoder_input, source_mask, target_mask)
-
-                # flatten out predictions and labels because the loss function
-                # for class predictions expects 2D predictions and 1D labels
-
-                # (batch_size * seq_len, vocab_size)
-                loss_input = output.view(-1, vocab_size)
-
-                # (batch_size * seq_len)
-                # cross entropy expects a long, but loss_target defaults to int
-                loss_target = label.view(-1).long()
-
-                # compute the loss and the gradients of the model parameters
-                loss = loss_fn(loss_input, loss_target)
-                # print the loss after each batch
-                batch_tqdm.set_postfix({"loss": f"{loss.item():.3f}"})
-                # send the gradients to the model parameters
-                loss.backward()
-
-                # keep track of the loss for this batch
-                losses.append(loss.item())
-
-                # update model parameters
-                optimizer.step()
-                # set gradients to None so they don't affect the next batch
-                optimizer.zero_grad(set_to_none=True)
-
             # epoch + 1 so we don't re-train an epoch.
             # the value of epoch is the epoch we just finished
             components.epoch = epoch + 1
@@ -124,7 +125,7 @@ def train_model(components):
             translations.append(epoch_translations)
             # Save the train state at the end of every epoch
             components.save(
-                MODEL_TRAIN_STATE,
+                components.types.MODEL_TRAIN_STATE,
                 {
                     "epoch": epoch + 1,
                     "losses": losses,

@@ -1,10 +1,10 @@
 import sys
 
-from configuration import DEFAULT_CONFIG
+from configuration import CONFIG
 from components import Components
 from translation import translate
 
-components = Components(DEFAULT_CONFIG)
+components = Components(CONFIG)
 
 if len(sys.argv) == 1:
     translate(components)

@@ -119,7 +119,7 @@ class ToyDatasetTest(Dataset):
         self.examples = []
         for i in example_indices:
             pair = tokenized_dataset[i]
-            self.examples.append({"source": pair["de"], "target": pair["en"]})
+            self.examples.append({"source": pair["en"], "target": pair["de"]})
 
         pad_token_id = components.pad_token_id
 
