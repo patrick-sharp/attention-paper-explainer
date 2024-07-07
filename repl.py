@@ -4,31 +4,57 @@ import math
 from pathlib import Path
 import random
 import time
+import itertools
 
 import torch
 import torch.nn as nn
 import torchinfo
 from tqdm import tqdm
-import matplotlib.pyplot as plt
 
-import configuration
-import components
-import scratch
-import toy_dataset
-import bpe_tokenizer
-import masking
-import model
-import translation
-import training
-import testing
-import dynamic_batched_dataset
+from printing import red, print_clean_exception_traceback
+
+module_strs = [
+    "masking",
+    "toy_dataset",
+    "bpe_tokenizer",
+    "model",
+    "translation",
+    "training",
+    "testing",
+    "dynamic_batched_dataset",
+    "configuration",
+    "component_enum",
+    "components",
+    "scratch",
+    "plot",
+]
+
+
+# extremely hacky code, but this helps avoid throwing an exception when you first load
+# the repl with errors in one of the imported modules.
+# with this, it will just print the error and allow you to keep using the repl
+def import_modules():
+    for m_str in module_strs:
+        if m_str in globals():
+            del globals()[m_str]
+    for m_str in module_strs:
+        try:
+            m = importlib.import_module(m_str)
+            importlib.reload(m)
+            globals()[m_str] = m
+        except Exception as ex:
+            print(red("error importing " + m_str))
+            print_clean_exception_traceback(ex)
+            return False
+
+    return True
 
 
 def set_component_enum():
     """This function resets the repl's component enum values. This makes sure
     that the enum values have reference equality after you refresh the repl with rf"""
-    for component_type in components.ComponentType:
-        globals()[component_type.name] = component_type
+    for ct in component_enum.ComponentType:
+        globals()[ct.name] = ct
 
 
 def repl_state(rng_state=None):
@@ -40,28 +66,34 @@ def repl_state(rng_state=None):
     print(cmp)
 
 
-repl_state()
+def rl():
+    """reload: re-import module code into the repl"""
+    if import_modules():
+        # when refreshing the repl, reset the torch rng
+        repl_state()
 
 
-def rf():
-    """refresh: re-import recent changes in the project into the repl"""
-    importlib.reload(configuration)
-    importlib.reload(components)
-    importlib.reload(scratch)
-    importlib.reload(toy_dataset)
-    importlib.reload(bpe_tokenizer)
-    importlib.reload(masking)
-    importlib.reload(model)
-    importlib.reload(translation)
-    importlib.reload(training)
-    importlib.reload(testing)
-    importlib.reload(dynamic_batched_dataset)
-    # when refreshing the repl, reset the torch rng
-    repl_state()
+# this kicks off importing all the modules and initializing the repl state
+rl()
+
+
+def all_modules_imported():
+    """returns true if all necessary modules are imported, false otherwise"""
+    ret = True
+    for m_str in module_strs:
+        if m_str not in globals():
+            print(red("module " + m_str + " not imported"))
+            ret = False
+    return ret
 
 
 # sample forward pass for the model
 def summary():
+    if not all_modules_imported():
+        return
+
+    cmp.require(TRAIN_BATCHED)
+
     transformer = model.Transformer(cmp)
 
     input_data = [
@@ -74,15 +106,21 @@ def summary():
     print(torchinfo.summary(transformer, input_data=input_data, dtypes=[torch.int32]))
 
 
-# translate
+# translate a sentence using the model
 def translate(sentence=None):
+    if not all_modules_imported():
+        return
+
     translation.translate(cmp, sentence)
 
 
 # train model
 def train(fresh=True):
-    cmp.init(TOKENIZER)
-    cmp.init(TRAIN_BATCHED)
+    if not all_modules_imported():
+        return
+
+    cmp.require(TOKENIZER)
+    cmp.require(TRAIN_BATCHED)
     if fresh:
         # reset random seeds to make training from the repl consistent as long as you're
         # training a fresh model
@@ -90,7 +128,7 @@ def train(fresh=True):
         torch.manual_seed(0)
         cmp.create(MODEL_TRAIN_STATE)
     else:
-        cmp.init(MODEL_TRAIN_STATE)
+        cmp.require(MODEL_TRAIN_STATE)
 
     training.train_model(cmp)
 
@@ -98,130 +136,18 @@ def train(fresh=True):
 # test model
 # prints BLEU score of model on test set
 # this is a number between 0.0 and 1.0
-def test():
-    cmp.init_all()
+# set limit to None for all results
+def test(limit=3):
+    if not all_modules_imported():
+        return
+
+    cmp.require_all()
     bleu_score, expected, predicted = testing.test_model(cmp)
     print("BLEU score:", bleu_score)
-    for e, p in zip(expected, predicted):
+    for e, p in itertools.islice(zip(expected, predicted), limit):
         print("expected: ", e)
         print("predicted:", p)
         print()
-
-
-# plot a color mesh of the positional encodings
-def plot_positional_encodings():
-    """This code is from Jay Alammar"""
-
-    if not cmp.present[MODEL_TRAIN_STATE]:
-        cmp.create(MODEL_TRAIN_STATE)
-
-    tokens = 10
-
-    # (10, d_model)
-    pos_encoding = cmp.model.positional_encoding.positional_encodings[
-        0, 0:tokens, :
-    ].detach()
-
-    plt.figure(figsize=(12, 8))
-    plt.pcolormesh(pos_encoding, cmap="viridis")
-    plt.xlabel("Embedding Dimensions")
-    plt.xlim((0, cmp.config.d_model))
-    plt.ylim((tokens, 0))
-    plt.ylabel("Token Position")
-    plt.colorbar()
-    plt.show()
-
-
-# Plotting functions
-
-
-# plot a graph of the current loss
-def plot_loss():
-    plt.plot(cmp.losses)
-    plt.ylabel("Loss")
-    plt.xlabel("Batch")
-    ax = plt.gca()
-    ax.set_ylim([0, cmp.losses[0] + 1])
-    plt.show()
-
-
-def plot_encoder_attention(layer=0, head=0, sentence=translation.en_1):
-    tokenizer = cmp.tokenizer
-    model = cmp.model
-    pad_token_id = cmp.pad_token_id
-
-    model.eval()
-    token_ids = tokenizer.encode(sentence).ids
-    tokens = [tokenizer.id_to_token(token_id) for token_id in token_ids]
-    encoder_input = torch.tensor(token_ids).unsqueeze(0)
-    source_mask = masking.create_source_mask(encoder_input, pad_token_id)
-
-    instrumentation = {
-        "layer": layer,
-        "head": head,
-    }
-    # for side effects on instrumentation
-    model.encode(encoder_input, source_mask, instrumentation)
-    attention = instrumentation["attention"].transpose(0, 1).flip([1])
-
-    fig, ax = plt.subplots(figsize=(10, 10))
-    im = ax.imshow(attention)
-
-    # Show all ticks and label them with the respective list entries
-    ax.set_xticks(range(len(tokens)), labels=tokens)
-    ax.set_yticks(range(len(tokens)), labels=reversed(tokens))
-    plt.xlabel("Query")
-    plt.ylabel("Key")
-
-    # Rotate the tick labels and set their alignment.
-    plt.setp(ax.get_xticklabels(), rotation=45, ha="right", rotation_mode="anchor")
-
-    # Loop over data dimensions and create text annotations.
-    for i in range(attention.shape[0]):
-        for j in range(attention.shape[1]):
-            text = ax.text(
-                j,
-                i,
-                "{:.2f}".format(attention[i, j].item()),
-                ha="center",
-                va="center",
-                color="w",
-            )
-
-    ax.set_title("Attention scores")
-    fig.tight_layout()
-    plt.show()
-    return attention
-
-
-def plot_embeddings():
-    model = cmp.model
-
-    source = (
-        model.source_embedding.embedding._parameters["weight"].detach().transpose(0, 1)
-    )
-    target = (
-        model.target_embedding.embedding._parameters["weight"].detach().transpose(0, 1)
-    )
-
-    import numpy as np
-
-    fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(10, 10))
-
-    plt.subplot(211)
-    im = ax1.imshow(source)
-    plt.xlabel("Token id")
-    plt.ylabel("Embedding vector dimension")
-    ax1.set_title("Source embeddings")
-
-    plt.subplot(212)
-    im = ax2.imshow(target)
-    plt.xlabel("Token id")
-    plt.ylabel("Embedding vector dimension")
-    ax2.set_title("Target embeddings")
-
-    fig.tight_layout()
-    plt.show()
 
 
 # print n sample translations for one example from the model's training.
@@ -229,6 +155,9 @@ def plot_embeddings():
 # this will show you how the model model improved over time.
 # translations will be evenly spaced across all epochs
 def print_translations(idx=0, n=5):
+    if not all_modules_imported():
+        return
+
     if cmp.translations is None or len(cmp.translations) == 0:
         print("no translations recorded")
         return

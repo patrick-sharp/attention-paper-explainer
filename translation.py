@@ -7,7 +7,7 @@ from dataclasses import dataclass
 import torch
 from torch.nn.functional import softmax
 
-import dataset
+from component_enum import *
 import model
 import masking
 
@@ -182,7 +182,7 @@ def translate_beam_search(components, sentence):
     return translations
 
 
-def translate_single(components, sentence):
+def translate_greedy(components, sentence):
     """Returns a single translation of sentence"""
     config = components.config
     tokenizer = components.tokenizer
@@ -261,12 +261,12 @@ def translate(components, sentence=None, use_beam_search=True):
         reference_translation = de_0
 
     # must have a tokenizer and a model
-    components.init(components.types.TOKENIZER)
-    components.init(components.types.MODEL_TRAIN_STATE)
+    components.require(TOKENIZER)
+    components.require(MODEL_TRAIN_STATE)
 
     if use_beam_search:
         translations = translate_beam_search(components, sentence)
     else:
-        translation = [translate_single(components, sentence)]
+        translation = [translate_greedy(components, sentence)]
 
     print_comparison(sentence, reference_translation, translations)

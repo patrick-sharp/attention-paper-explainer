@@ -5,10 +5,10 @@ import torch.nn as nn
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
-import dataset
+from component_enum import *
 import model
 from keyboard_interrupt import DelayedKeyboardInterrupt
-from translation import translate_single
+from translation import translate_greedy
 
 
 def init_optimizer(config, model):
@@ -31,7 +31,7 @@ def benchmark_translations(components, examples):
     epoch_translations = []
     for example in examples:
         example_copy = dict(example)
-        perplexity, translation = translate_single(components, example["source"])
+        perplexity, translation = translate_greedy(components, example["source"])
         example_copy["translation"] = translation
         example_copy["perplexity"] = perplexity
         epoch_translations.append(example_copy)
@@ -42,9 +42,9 @@ def train_model(components):
     config = components.config
 
     # must have a tokenizer, a train dataset, and a model
-    components.init(components.types.TOKENIZER)
-    components.init(components.types.TRAIN_BATCHED)
-    components.init(components.types.MODEL_TRAIN_STATE)
+    components.require(TOKENIZER)
+    components.require(TRAIN_BATCHED)
+    components.require(MODEL_TRAIN_STATE)
 
     pad_token = config.pad_token
     label_smoothing_epsilon = config.label_smoothing_epsilon
@@ -125,7 +125,7 @@ def train_model(components):
             translations.append(epoch_translations)
             # Save the train state at the end of every epoch
             components.save(
-                components.types.MODEL_TRAIN_STATE,
+                MODEL_TRAIN_STATE,
                 {
                     "epoch": epoch + 1,
                     "losses": losses,

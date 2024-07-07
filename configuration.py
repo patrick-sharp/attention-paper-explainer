@@ -7,8 +7,8 @@ import torch
 import toy_dataset
 import dynamic_batched_dataset
 
-# this gets rid of an annoying huggingface error message about deadlocks
-os.environ["TOKENIZERS_PARALLELISM"] = "false"
+# enable multithreaded tokenizer training
+os.environ["TOKENIZERS_PARALLELISM"] = "true"
 
 
 class BaseConfig:

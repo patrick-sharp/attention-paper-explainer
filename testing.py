@@ -3,8 +3,7 @@ from torchmetrics.text import BLEUScore
 from torch.utils.data import DataLoader
 
 import components
-import dataset
-from translation import translate_single
+from translation import translate_greedy
 
 
 def test_model(components):
@@ -34,7 +33,7 @@ def test_model(components):
         # the toy and wmt14 datasets only has one german translation per english sentence
         expected_text.append([target_text])
         # translation = translate_tensor(components, encoder_input, source_mask)
-        _, translation = translate_single(components, source_text)
+        _, translation = translate_greedy(components, source_text)
         predicted_text.append(translation)
 
     # default n gram is 4, so won't consider sentences 3 words or less

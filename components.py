@@ -1,5 +1,4 @@
 import os
-from enum import Enum, global_enum
 import pickle
 from pathlib import Path
 
@@ -7,6 +6,8 @@ import torch
 from tokenizers import Tokenizer
 from tokenizers.models import BPE
 
+from component_enum import *
+from printing import red, green, print_clean_exception_traceback
 import bpe_tokenizer
 import model
 import training
@@ -20,30 +21,6 @@ def save_pickle(obj, path):
 def load_pickle(path):
     with open(path, "rb") as file:
         return pickle.load(file)
-
-
-@global_enum
-class ComponentType(Enum):
-    TRAIN_RAW = 0
-    TOKENIZER = 1
-    TRAIN_TOKENIZED = 2
-    TRAIN_BATCHED = 3
-    MODEL_TRAIN_STATE = 4
-    TEST_RAW = 5
-    TEST_TOKENIZED = 6
-    TEST_BATCHED = 7
-
-
-dependencies = {
-    TRAIN_RAW: [],
-    TOKENIZER: [TRAIN_RAW],
-    TRAIN_TOKENIZED: [TRAIN_RAW, TOKENIZER],
-    TRAIN_BATCHED: [TRAIN_TOKENIZED],
-    MODEL_TRAIN_STATE: [],
-    TEST_RAW: [],
-    TEST_TOKENIZED: [TEST_RAW, TOKENIZER],
-    TEST_BATCHED: [TEST_TOKENIZED],
-}
 
 
 class Components:
@@ -71,12 +48,8 @@ class Components:
         self.config = config
         self.device = torch.device(config.device_string)
 
-        # allows us to access component types with reference equality in the train loop
-        # and in single-sentence translation
-        self.types = ComponentType
-
         self.paths = {}
-        for component_type in self.types:
+        for component_type in ComponentType:
             filename = getattr(config, component_type.name.lower() + "_filename")
             path = os.path.join(folder, filename)
             self.paths[component_type] = path
@@ -96,7 +69,7 @@ class Components:
         config = self.config
         dataset_module = config.dataset_module
 
-        for dependency in dependencies[component_type]:
+        for dependency in component_dependencies[component_type]:
             if not self.present[dependency]:
                 self.create(dependency)
 
@@ -204,13 +177,13 @@ class Components:
             self.present[component_type] = True
         except Exception as ex:
             # If the state on disk is bad, delete it
-            print(ex)
-            print(
-                f"Exception loading {component_type.name}, deleting cached version..."
-            )
+            msg = f"Exception loading {component_type.name}, deleting cached version..."
+            print(red(msg))
+            print_clean_exception_traceback(ex)
+            print()
             self.clean(component_type)
 
-    def init(self, component_type):
+    def require(self, component_type):
         """If a component is not initialized, initialize it. Prefer to initialize from cache"""
         if not self.present[component_type]:
             if self.cached(component_type):
@@ -222,8 +195,8 @@ class Components:
         """cleans a component and any components that depend on it"""
 
         # if any components depend on this one, clean them too
-        for component_type_other in self.types:
-            if component_type in dependencies[component_type_other]:
+        for component_type_other in ComponentType:
+            if component_type in component_dependencies[component_type_other]:
                 self.clean(component_type_other)
 
         path = self.paths[component_type]
@@ -272,35 +245,23 @@ class Components:
         self.eow_token_id = self.tokenizer.token_to_id(self.config.eow_token)
 
     def create_all(self):
-        for type in self.types:
+        for type in ComponentType:
             self.create(type)
 
     def load_all(self):
         for ct in ComponentType:
             self.load(ct)
 
-    def init_all(self):
+    def require_all(self):
         """Initialize all components, preferring to retrieve from cache"""
-        for type in self.types:
-            if not self.present[type]:
-                if self.cached(type):
-                    self.load(type)
-                else:
-                    self.create(type)
+        for ct in ComponentType:
+            self.require(ct)
 
     def clean_all(self):
         for ct in ComponentType:
             self.clean(ct)
 
     def component_status(self, component_type):
-        def red(x):
-            # ANSI escape characters for red
-            return "\033[91m{}\033[00m".format(x)
-
-        def green(x):
-            # ANSI escape characters for green
-            return "\033[92m{}\033[00m".format(x)
-
         colon = ": "
 
         def wrap(s):
