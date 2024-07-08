@@ -79,12 +79,12 @@ rl()
 
 def all_modules_imported():
     """returns true if all necessary modules are imported, false otherwise"""
-    ret = True
+    ret_val = True
     for m_str in module_strs:
         if m_str not in globals():
             print(red("module " + m_str + " not imported"))
-            ret = False
-    return ret
+            ret_val = False
+    return ret_val
 
 
 # sample forward pass for the model
@@ -131,6 +131,16 @@ def train(fresh=True):
         cmp.require(MODEL_TRAIN_STATE)
 
     training.train_model(cmp)
+
+
+def time_func(func, *args, **kwargs):
+    start = time.time()
+    ret_val = func(*args, **kwargs)
+    end = time.time()
+
+    print(f"\nElapsed: {end-start:0.8f} seconds")
+
+    return ret_val
 
 
 # test model

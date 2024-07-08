@@ -14,6 +14,8 @@ def green(x):
 
 
 def print_clean_exception_traceback(exception):
+    """prints the stacktrace and exception text of the exception. Only prints the parts
+    of the stacktrace from this project's code (excluding the repl)"""
     tb = exception.__traceback__
     cwd = os.getcwd()
     tb_list = traceback.extract_tb(tb)
