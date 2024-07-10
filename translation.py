@@ -7,7 +7,8 @@ from dataclasses import dataclass
 import torch
 from torch.nn.functional import softmax
 
-from component_enum import *
+import component_enum
+from component_enum import ComponentType
 import model
 import masking
 
@@ -44,7 +45,7 @@ def translate_beam_search(components, sentence):
     config = components.config
     tokenizer = components.tokenizer
     model = components.model
-    max_translation_len = config.max_translation_len
+    max_translation_extra_tokens = config.max_translation_extra_tokens
     bos_token_id = components.bos_token_id
     eos_token_id = components.eos_token_id
     pad_token_id = components.pad_token_id
@@ -87,6 +88,7 @@ def translate_beam_search(components, sentence):
     ended = []
 
     translation_len = 0
+    max_translation_len = len(token_ids) + max_translation_extra_tokens
     while len(in_progress) > 0 and translation_len < max_translation_len:
         translation_len += 1
 
@@ -187,7 +189,7 @@ def translate_greedy(components, sentence):
     config = components.config
     tokenizer = components.tokenizer
     model = components.model
-    max_translation_len = config.max_translation_len
+    max_translation_extra_tokens = config.max_translation_extra_tokens
     bos_token_id = components.bos_token_id
     eos_token_id = components.eos_token_id
     pad_token_id = components.pad_token_id
@@ -208,6 +210,7 @@ def translate_greedy(components, sentence):
 
     neg_log_ppl = 0.0
 
+    max_translation_len = len(token_ids) + max_translation_extra_tokens
     while decoder_input.shape[1] < max_translation_len:
         target_mask = masking.create_target_mask(decoder_input, pad_token_id)
 
@@ -261,8 +264,8 @@ def translate(components, sentence=None, use_beam_search=True):
         reference_translation = de_0
 
     # must have a tokenizer and a model
-    components.require(TOKENIZER)
-    components.require(MODEL_TRAIN_STATE)
+    components.require(components.types.TOKENIZER)
+    components.require(components.types.MODEL_TRAIN_STATE)
 
     if use_beam_search:
         translations = translate_beam_search(components, sentence)

@@ -6,6 +6,7 @@ import torch
 from tokenizers import Tokenizer
 from tokenizers.models import BPE
 
+import component_enum
 from component_enum import *
 from printing import red, green, print_clean_exception_traceback
 import bpe_tokenizer
@@ -47,6 +48,8 @@ class Components:
 
         self.config = config
         self.device = torch.device(config.device_string)
+
+        self.types = component_enum
 
         self.paths = {}
         for component_type in ComponentType:
@@ -185,6 +188,7 @@ class Components:
 
     def require(self, component_type):
         """If a component is not initialized, initialize it. Prefer to initialize from cache"""
+
         if not self.present[component_type]:
             if self.cached(component_type):
                 self.load(component_type)

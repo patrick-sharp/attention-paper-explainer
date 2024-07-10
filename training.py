@@ -42,9 +42,9 @@ def train_model(components):
     config = components.config
 
     # must have a tokenizer, a train dataset, and a model
-    components.require(TOKENIZER)
-    components.require(TRAIN_BATCHED)
-    components.require(MODEL_TRAIN_STATE)
+    components.require(components.types.TOKENIZER)
+    components.require(components.types.TRAIN_BATCHED)
+    components.require(components.types.MODEL_TRAIN_STATE)
 
     pad_token = config.pad_token
     label_smoothing_epsilon = config.label_smoothing_epsilon

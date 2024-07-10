@@ -21,7 +21,9 @@ class BaseConfig:
     # Model params
     device_string = "cpu"  # what pytorch backend to use (cpu, cuda, mkl, mps, etc.)
     max_seq_len = 1500  # maximum length of input sequence the model will accept
-    max_translation_len = max_seq_len  # maximum length of output translation
+    max_translation_extra_tokens = (
+        50  # max output length = input length + this parameter
+    )
     num_blocks = 6  # number of blocks in decoder and encoder each
     d_model = 512
     d_ff = 2048
@@ -79,7 +81,7 @@ class ToyConfig(BaseConfig):
     name = "ToyConfig"
 
     dataset_module = toy_dataset
-    max_translation_len = 50
+    max_translation_extra_tokens = 50
 
     d_model = 64
     d_ff = 256
@@ -98,7 +100,7 @@ class ToyDynamicBatchedConfig(BaseConfig):
     name = "ToyDynamicBatchedConfig"
 
     dataset_module = dynamic_batched_dataset
-    max_translation_len = 50
+    max_translation_extra_tokens = 50
 
     d_model = 64
     d_ff = 256
@@ -121,7 +123,7 @@ class SmallConfig(BaseConfig):
     num_heads = 4
     num_blocks = 2
 
-    max_translation_len = 50
+    max_translation_extra_tokens = 50
     train_steps = 100
     train_sentence_pairs = 1
     test_sentence_pairs = 1
@@ -129,7 +131,7 @@ class SmallConfig(BaseConfig):
 
 class TwoSentenceConfig(BaseConfig):
     name = "TwoSentenceConfig"
-    max_translation_len = 20
+    max_translation_extra_tokens = 20
     train_steps = 30
     train_sentence_pairs = 2
     test_sentence_pairs = 2
