@@ -1,6 +1,4 @@
 import random
-import os
-import copy
 
 from datasets import load_dataset
 from tokenizers import Tokenizer
@@ -15,41 +13,35 @@ from tqdm import tqdm
 from torch.utils.data import Dataset
 
 import masking
+import wmt14_uniform_batch
 
 
 def raw_dataset(config, split):
-    """Returns the wmt14 huggingface dataset."""
-    ds = load_dataset(
-        "wmt14", "de-en", split=split, cache_dir=config.huggingface_cache_dir
-    )
-    # only return the dataset with a subset of the rows
-    if split == "train":
-        num_pairs = config.train_sentence_pairs
-    elif split == "test":
-        num_pairs = config.test_sentence_pairs
-    ds = ds.select(range(num_pairs))
-    ds = ds.map(itemgetter("translation"))
-    return ds
+    return wmt14_uniform_batch.raw_dataset(config, split)
+
+
+def tokenize_dataset(config, raw_dataset, tokenizer):
+    return wmt14_uniform_batch.tokenize_dataset(config, raw_dataset, tokenizer)
 
 
 def tokenize_dataset(config, raw_dataset, tokenizer):
     def tokenize_item(item):
-        de = item["translation"]["de"]
         en = item["translation"]["en"]
+        de = item["translation"]["de"]
 
         # delete this key, otherwise it shows up in the returned dict
         del item["translation"]
 
-        de_tok = tokenizer.encode(de).ids
         en_tok = tokenizer.encode(en).ids
-        assert len(de_tok) <= config.max_seq_len
+        de_tok = tokenizer.encode(de).ids
         assert len(en_tok) <= config.max_seq_len
+        assert len(de_tok) <= config.max_seq_len
         return {
-            "de": de,
             "en": en,
-            "de_tok": de_tok,
+            "de": de,
             "en_tok": en_tok,
-            "length": len(de_tok) + len(en_tok),
+            "de_tok": de_tok,
+            "length": len(en_tok) + len(de_tok),
         }
 
     ds = raw_dataset.map(tokenize_item)
@@ -110,7 +102,7 @@ class BatchedDataset(Dataset):
             )
 
         batch_start = 0
-        max_len = 0  # this is the maximum length of either de or en
+        max_len = 0  # this is the maximum length of either en or de
         md = 0
         me = 0
         for i in tqdm(range(len(tokenized_dataset))):
@@ -154,12 +146,12 @@ class BatchedDataset(Dataset):
         pad_token = self.config.pad_token
         pad_token_id = self.tokenizer.token_to_id(pad_token)
         items = [self.tokenized_dataset[i] for i in range(start, end)]
-        de_padded = []
         en_padded = []
+        de_padded = []
 
         for item in items:
-            de_padded.append(pad(item["de_tok"], seq_len, pad_token_id))
             en_padded.append(pad(item["en_tok"], seq_len, pad_token_id))
+            de_padded.append(pad(item["de_tok"], seq_len, pad_token_id))
 
         # (batch_size, seq_len)
         encoder_input = torch.tensor(en_padded, dtype=torch.int32)
@@ -206,37 +198,6 @@ class BatchedDataset(Dataset):
         """Get the nth batch of the dataset.
         Generated dynamically from the batch shapes, the tokenized dataset, and n."""
         return self.pad_batch(self.batch_bounds[n])
-
-
-class SyntheticDataset(Dataset):
-    def __init__(self, filename, split):
-        self.split = split
-        self.items = []
-        df = pd.read_csv(filename)
-        for i in range(len(df)):
-            self.items.append({"translation": df.iloc[i].to_dict()})
-
-    def __len__(self):
-        if hasattr(self, "items"):
-            return len(self.items)
-        else:
-            return 0
-
-    def __getitem__(self, idx):
-        return self.items[idx]
-
-    def sort(self, key, reverse=False):
-        def keyfunc(x):
-            return x[key]
-
-        self.items.sort(key=keyfunc, reverse=reverse)
-        return self
-
-    def map(self, func):
-        new_ds = copy.deepcopy(self)
-        for i, item in enumerate(new_ds.items):
-            new_ds.items[i] = func(item)
-        return new_ds
 
 
 def batch_dataset(components, tokenized_dataset, split):

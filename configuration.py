@@ -5,7 +5,8 @@ from pathlib import Path
 import torch
 
 import toy_dataset
-import dynamic_batched_dataset
+import wmt14_uniform_batch
+import wmt14_dynamic_batch
 
 # enable multithreaded tokenizer training
 os.environ["TOKENIZERS_PARALLELISM"] = "true"
@@ -46,7 +47,9 @@ class BaseConfig:
 
     # wmt14 dataset params
     huggingface_cache_dir = "huggingface_cache"
-    max_tokens_in_batch = 10000
+    max_language_tokens_in_batch = (
+        10000  # maximum tokens in one batch for either the source or target language.
+    )
     train_sentence_pairs = 10000
     test_sentence_pairs = 1000
 
@@ -94,12 +97,31 @@ class ToyConfig(BaseConfig):
     adam_learning_rate = 1e-3
 
 
+class ToyUniformBatchedConfig(BaseConfig):
+    """Very small parameter values"""
+
+    name = "ToyUniformBatchedConfig"
+
+    dataset_module = wmt14_uniform_batch
+    max_translation_extra_tokens = 50
+
+    d_model = 64
+    d_ff = 256
+    num_heads = 4
+    d_key = 16
+    d_value = 16
+    num_blocks = 1
+
+    train_steps = 115
+    adam_learning_rate = 1e-3
+
+
 class ToyDynamicBatchedConfig(BaseConfig):
     """Very small parameter values"""
 
     name = "ToyDynamicBatchedConfig"
 
-    dataset_module = dynamic_batched_dataset
+    dataset_module = wmt14_dynamic_batch
     max_translation_extra_tokens = 50
 
     d_model = 64
@@ -142,4 +164,5 @@ class BigConfig(BaseConfig):
     name = "BigConfig"
 
 
-CONFIG = ToyDynamicBatchedConfig()
+# CONFIG = ToyDynamicBatchedConfig()
+CONFIG = ToyUniformBatchedConfig()

@@ -3,6 +3,7 @@ import importlib
 import math
 from pathlib import Path
 import random
+import sys
 import time
 import itertools
 
@@ -10,8 +11,6 @@ import torch
 import torch.nn as nn
 import torchinfo
 from tqdm import tqdm
-
-from printing import red, print_clean_exception_traceback
 
 module_strs = [
     "masking",
@@ -21,7 +20,8 @@ module_strs = [
     "translation",
     "training",
     "testing",
-    "dynamic_batched_dataset",
+    "wmt14_uniform_batch",
+    "wmt14_dynamic_batch",
     "configuration",
     "component_enum",
     "components",
@@ -35,19 +35,9 @@ module_strs = [
 # with this, it will just print the error and allow you to keep using the repl
 def import_modules():
     for m_str in module_strs:
-        if m_str in globals():
-            del globals()[m_str]
-    for m_str in module_strs:
-        try:
-            m = importlib.import_module(m_str)
-            importlib.reload(m)
-            globals()[m_str] = m
-        except Exception as ex:
-            print(red("error importing " + m_str))
-            print_clean_exception_traceback(ex)
-            return False
-
-    return True
+        m = importlib.import_module(m_str)
+        importlib.reload(m)
+        globals()[m_str] = m
 
 
 def set_component_enum():
@@ -68,13 +58,10 @@ def repl_state(rng_state=None):
 
 def rl():
     """reload: re-import module code into the repl"""
-    if import_modules():
-        # when refreshing the repl, reset the torch rng
-        repl_state()
+    import_modules()
+    repl_state()
 
 
-# this kicks off importing all the modules and initializing the repl state
-rl()
 
 
 def all_modules_imported():
@@ -200,3 +187,7 @@ def print_translations(idx=0, n=5):
         translation = cmp.translations[i][idx]["translation"]
         perplexity = cmp.translations[i][idx]["perplexity"]
         print(f"{i:{epoch_width}d}, {perplexity:{ppl_width}.3f},", translation)
+
+# this kicks off importing all the modules and initializing the repl state
+# I put it at the end so all the other functions get defined first even if the imports have an error
+rl()
