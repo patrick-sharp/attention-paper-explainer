@@ -20,7 +20,7 @@ class BaseConfig:
     components_folder = "components"  # stores cached components
 
     # Model params
-    device_string = "cpu"  # what pytorch backend to use (cpu, cuda, mkl, mps, etc.)
+    device = "cpu"  # what pytorch backend to use (cpu, cuda, mkl, mps, etc.)
     max_seq_len = 1500  # maximum length of input sequence the model will accept
     max_translation_extra_tokens = (
         50  # max output length = input length + this parameter
@@ -74,7 +74,7 @@ class BaseConfig:
     model_train_state_filename = "model_train_state.pt"
 
     # Translation params
-    beam_width = 4
+    num_beams = 4
     length_penalty_alpha = 0.6
 
 

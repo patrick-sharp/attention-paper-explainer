@@ -128,4 +128,7 @@ def batch_dataset(components, tokenized_dataset, split):
         desc="Batching",
     )
 
+    # otherwise it will convert the tensors we created in pad_batch into lists
+    batched_dataset.set_format("torch")
+
     return batched_dataset

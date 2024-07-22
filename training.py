@@ -51,10 +51,11 @@ def train_model(components):
 
     train_steps = config.train_steps
     vocab_size = components.tokenizer.get_vocab_size()
+    num_examples = config.num_examples
 
     tokenizer = components.tokenizer
+    train_raw = components.train_raw
     train_batched = components.train_batched
-    examples = train_batched.examples
 
     model = components.model
     optimizer = components.optimizer
@@ -68,6 +69,12 @@ def train_model(components):
         ignore_index=tokenizer.token_to_id(pad_token),
         label_smoothing=label_smoothing_epsilon,
     )
+
+    # select a list of sentences to translate to show the model's progress
+    examples = []
+    for i in range(num_examples):
+        pair = train_raw[i]
+        examples.append({"source": pair["en"], "target": pair["de"]})
 
     if components.epoch == 0:
         # it's funny to see what a completely

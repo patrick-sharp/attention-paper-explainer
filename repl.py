@@ -62,8 +62,6 @@ def rl():
     repl_state()
 
 
-
-
 def all_modules_imported():
     """returns true if all necessary modules are imported, false otherwise"""
     ret_val = True
@@ -187,6 +185,7 @@ def print_translations(idx=0, n=5):
         translation = cmp.translations[i][idx]["translation"]
         perplexity = cmp.translations[i][idx]["perplexity"]
         print(f"{i:{epoch_width}d}, {perplexity:{ppl_width}.3f},", translation)
+
 
 # this kicks off importing all the modules and initializing the repl state
 # I put it at the end so all the other functions get defined first even if the imports have an error

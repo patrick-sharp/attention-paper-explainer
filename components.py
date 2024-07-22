@@ -47,7 +47,7 @@ class Components:
         Path(folder).mkdir(parents=True, exist_ok=True)
 
         self.config = config
-        self.device = torch.device(config.device_string)
+        self.device = torch.device(config.device)
 
         self.types = component_enum
 
@@ -323,7 +323,7 @@ class Components:
             "  " + "config: ".ljust(name_str_length) + self.config.name + "\n"
         )
         device_status = (
-            "  " + "device: ".ljust(name_str_length) + self.config.device_string + "\n"
+            "  " + "device: ".ljust(name_str_length) + self.config.device + "\n"
         )
         statuses = ["  " + self.component_status(ct) for ct in ComponentType]
         return "Components:\n" + config_status + device_status + "\n".join(statuses)
