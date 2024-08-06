@@ -36,6 +36,7 @@ class Candidate:
     score: float
     in_progress: bool
 
+
 # a possible finished sentence.
 # we keep track of these as we generate predicted tokens.
 @dataclass
@@ -44,12 +45,16 @@ class Hypothesis:
     sum_log_prob: float
     score: float
 
-def score(sum_log_prob, length, length_penalty_alpha):
-    """sum_log_prob is the sum of the logs of the probabilities of all predicted tokens.
-       length is the length of the generated sequence.
-       length_penalty_alpha is a hyperparameter that controls how much longer sequences are prioritized"""
+
+def score(log_ppl, length, length_penalty_alpha):
+    """log_ppl is the sum of the logs of the probabilities of all predicted tokens
+    (the log of the perplexity of a hypothesis).
+    length is the length of the generated sequence.
+    length_penalty_alpha is a hyperparameter that controls how much longer sequences are prioritized.
+    Note that if you give this function zero-dimensional tensors instead of floats, you will get
+    a zero-dimensional tensor as output."""
     denominator = ((5.0 + length) / 6.0) ** length_penalty_alpha
-    return sum_log_prob / denominator
+    return log_ppl / denominator
 
 
 def _translate_batch_beam_search(ctx, encoder_input, source_mask):
@@ -79,34 +84,52 @@ def _translate_batch_beam_search(ctx, encoder_input, source_mask):
     encoder_output = model.encode(encoder_input, source_mask)
     # since the encoder output and the decoder_input should be the same shape, we
     # repeat the encoder_output.
-    # the batch size for the generated encoder_output will be the number of in 
+    # the batch size for the generated encoder_output will be the number of in
     # progress sentences, so we make num_beams rows of encoder_output per original row.
     encoder_output = encoder_output.repeat_interleave(batch_size * num_beams, 0)
     source_mask = source_mask.repeat_interleave(batch_size * num_beams, 0)
 
     # keep a list of at most num_beams hypotheses for each sentence in the batch.
     # They start empty because we don't have any finished sentences yet.
+    # at the end, this will be a list of size batch_size whose elements are lists of
+    # size num_beams, whose elements will be tuples of (score: float, hypothesis: torch.Tensor).
+    # the beam_hypotheses for each batch are sorted by score in descending order.
     beam_hypotheses = [[]] * batch_size
+    # whether all beams for a given sentence are done being translated
+    done_translating = [False] * batch_size
 
-    # the generated output sentences
-    decoder_input = torch.zeros((batch_size * num_beams, 1), dtype=torch.int32, device=device)
+    # the worst score for each sentence
+    worst_scores = [-math.inf] * batch_size
+
+    # (batch_size * num_beams, seq_len)
+    # the generated output sentences.
+    # this changes every iteration as we add more predicted tokens
+    decoder_input = torch.zeros(
+        (batch_size * num_beams, 1), dtype=torch.int32, device=device
+    )
     decoder_input.fill_(bos_token_id)
 
     # (batch_size, num_beams)
-    beam_scores = torch.zeros((batch_size, num_beams), dtype=torch.float, device=device)
+    # the sum of the logs of the probabilities of each predicted token for each beam
+    # for each sentence. these are negative because they are the sum of the logs of
+    # probabilties. probabilities are >=0 and <=1, so their logs are negative.
+    # higher is better.
+    beam_log_ppls = torch.zeros(
+        (batch_size, num_beams), dtype=torch.float, device=device
+    )
     # start with negative infinity in all beams except one in order to make sure we
     # don't get identical beams. If we don't do this, then the num_beams next tokens
     # after the bos character will all be the same token. If the next tokens all come
     # from one beam, they will be unique.
-    beam_scores[:, 1:] = -math.inf
-    beam_scores = beam_scores.view(batch_size * num_beams)
+    beam_log_ppls[:, 1:] = -math.inf
+    # (batch_size * num_beams)
+    beam_log_ppls = beam_log_ppls.view(batch_size * num_beams)
 
-    max_translation_len = seq_len + max_translation_extra_tokens
+    max_seq_len = seq_len + max_translation_extra_tokens
 
-    all_beams_done = False
-    translation_len = 0
-    while not all_beams_done and translation_len < max_translation_len:
-        translation_len += 1
+    seq_len = 0
+    while not all(done_translating) and seq_len < max_seq_len:
+        seq_len += 1
 
         # (batch_size * num_beams, 1, dec_seq_len, dec_seq_len)
         target_mask = masking.create_target_mask(decoder_input, pad_token_id)
@@ -129,21 +152,152 @@ def _translate_batch_beam_search(ctx, encoder_input, source_mask):
         # we'll need this for getting the top results
         _, vocab_size = probabilities.shape
 
-        # take two tokens so that we always have at least num_beams in progress sentences.
-        # if you only take one token, it might be an eos token and then you can't keep
-        # using that beam any more.
-        topk = torch.topk(probabilities, num_beams * 2, largest=True, sorted=True)
-        
-        topk_probabilities = topk[0]
+        # take two tokens so that we always have at least num_beams sentences that
+        # haven't ended. if you only take one token, it might be an eos token and then
+        # you can't keep using that beam any more.
+        topk = torch.topk(
+            probabilities_view, num_beams * 2, dim=1, largest=True, sorted=True
+        )
+
+        # (batch_size, num_beams * 2)
+        topk_log_probabilities = torch.log(topk[0])
+
+        # (batch_size, num_beams * 2)
+        # these will be from 0 to num_beams * vocab_size
         topk_idxs = topk[1]
 
-    #translations = []
-    #for cand in candidates:
+        # (batch_size, num_beams * 2)
+        topk_token_ids = topk_idxs % vocab_size
+
+        # (batch_size, num_beams * 2)
+        topk_beam_idxs = topk_idxs = torch.div(
+            topk_idxs, vocab_size, rounding_mode="floor"
+        )
+
+        next_beam_tokens = torch.zeros(
+            (batch_size, num_beams), dtype=torch.int32, device=device
+        )
+        next_beam_indices = torch.zeros(
+            (batch_size, num_beams), dtype=torch.int32, device=device
+        )
+
+        for batch_idx in range(batch_size):
+            # if self._done[batch_group_idx]:
+            #    if self.num_beams < len(self._beam_hyps[batch_group_idx]):
+            #        raise ValueError(f"Batch can only be done if at least {self.num_beams} beams have been generated")
+            #    if eos_token_id is None or pad_token_id is None:
+            #        raise ValueError("Generated beams >= num_beams -> eos_token_id and pad_token have to be defined")
+            #    # pad the batch
+            #    next_beam_scores[batch_idx, :] = 0
+            #    next_beam_tokens[batch_idx, :] = pad_token_id
+            #    next_beam_indices[batch_idx, :] = 0
+            #    continue
+
+            if done_translating[batch_idx]:
+                continue
+
+            # next tokens for this sentence
+            beam_idx = 0
+            # iterate over the num_beams * 2 candidate tokens in order of highest
+            # probability to lowest probability
+            for candidate_idx in range(num_beams * 2):
+                # from 0.0 to 1.0
+                log_probability = topk_log_probabilities[batch_idx, candidate_idx]
+
+                # from 0 to vocab_size
+                token_id = topk_token_ids[batch_idx, candidate_idx]
+
+                # index from 0 to num_beams
+                beam_idx = topk_beam_idxs[batch_idx, candidate_idx]
+
+                # this is the index of the previous predictions for this beam in the
+                # decoder_input tensor
+                input_idx = batch_idx * num_beams + beam_idx
+                # if we predict the end of sentence, then this is a finished hypothesis.
+                # we look at
+                if token_id.item() == eos_token_id:
+                    # TODO: see if it works to not add hypothesis for rank >= num_beams
+                    # this might depend on sign of length penalty
+                    beam_log_ppl = beam_log_ppls[input_idx]
+                    hyp_log_ppl = beam_log_ppl + log_probability
+                    hyp_score = score(hyp_log_ppl, seq_len, length_penalty_alpha).item()
+
+                    if len(beam_hypotheses[batch_idx]) < num_beams:
+                        beam = decoder_input[input_idx]
+                        hyp = torch.cat([beam, token_id.view(1)])
+                        beam_hypotheses[batch_idx].append((hyp_score, hyp))
+                    elif hyp_score > worst_scores[batch_idx]:
+                        beam = decoder_input[input_idx]
+                        hyp = torch.cat([beam, token_id.view(1)])
+                        # (seq_len)
+                        beam_hypotheses[batch_idx][num_beams - 1] = (hyp_score, hyp)
+                        beam_hypotheses[batch_idx].sort(
+                            key=lambda x: x[0], reverse=True
+                        )
+        break
+
+        #######################################
+        # FRONTIER
+        #######################################
+        #    for beam_token_rank, (next_token, next_score, next_index) in enumerate(
+        #        zip(next_tokens[batch_idx], next_scores[batch_idx], next_indices[batch_idx])
+        #    ):
+        #        batch_beam_idx = batch_idx * self.group_size + next_index
+        #        # add to generated hypotheses if end of sentence
+        #        if (eos_token_id is not None) and (next_token.item() in eos_token_id):
+        #            # if beam_token does not belong to top num_beams tokens, it should not be added
+        #            is_beam_token_worse_than_top_num_beams = beam_token_rank >= self.group_size
+        #            if is_beam_token_worse_than_top_num_beams:
+        #                continue
+        #            if beam_indices is not None:
+        #                beam_index = beam_indices[batch_beam_idx]
+        #                beam_index = beam_index + (batch_beam_idx,)
+        #            else:
+        #                beam_index = None
+
+        #            self._beam_hyps[batch_group_idx].add(
+        #                input_ids[batch_beam_idx].clone(),
+        #                next_score.item(),
+        #                beam_indices=beam_index,
+        #                generated_len=cur_len - decoder_prompt_len,
+        #            )
+        #        else:
+        #            # add next predicted token since it is not eos_token
+        #            next_beam_scores[batch_idx, beam_idx] = next_score
+        #            next_beam_tokens[batch_idx, beam_idx] = next_token
+        #            next_beam_indices[batch_idx, beam_idx] = batch_beam_idx
+        #            beam_idx += 1
+
+        #        # once the beam for next step is full, don't add more tokens to it.
+        #        if beam_idx == self.group_size:
+        #            break
+
+        #    if beam_idx < self.group_size:
+        #        raise ValueError(
+        #            f"At most {self.group_size} tokens in {next_tokens[batch_idx]} can be equal to `eos_token_id:"
+        #            f" {eos_token_id}`. Make sure {next_tokens[batch_idx]} are corrected."
+        #        )
+
+        #    # Check if we are done so that we can save a pad step if all(done)
+        #    self._done[batch_group_idx] = self._done[batch_group_idx] or self._beam_hyps[batch_group_idx].is_done(
+        #        next_scores[batch_idx].max().item(), cur_len, decoder_prompt_len
+        #    )
+
+        # return UserDict(
+        #    {
+        #        "next_beam_scores": next_beam_scores.view(-1),
+        #        "next_beam_tokens": next_beam_tokens.view(-1),
+        #        "next_beam_indices": next_beam_indices.view(-1),
+        #    }
+
+    # translations = []
+    # for cand in candidates:
     #    translation = tokenizer.decode(cand.token_ids[0].tolist())
     #    prettified = prettify(config, translation)
     #    translations.append((cand.neg_log_ppl, prettified))
 
-    #return translations
+    # return translations
+
 
 def translate_beam_search(components, sentence):
     """Translates using beam search, which will return multiple possible translations.
@@ -381,7 +535,9 @@ def translate(components, sentence=None, use_beam_search=True):
         encoder_input = torch.tensor(token_ids).unsqueeze(0)
 
         source_mask = masking.create_source_mask(encoder_input, pad_token_id)
-        translations = _translate_batch_beam_search(components, encoder_input, source_mask)
+        translations = _translate_batch_beam_search(
+            components, encoder_input, source_mask
+        )
         return
     else:
         translation = [translate_greedy(components, sentence)]
