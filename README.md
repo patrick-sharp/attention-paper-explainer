@@ -98,8 +98,3 @@ https://pytorch.org/docs/stable/notes/broadcasting.html#broadcasting-semantics
 https://pytorch.org/docs/stable/generated/torch.matmul.html
 
 
-## contact me
-github
-twitter
-email
-

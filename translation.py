@@ -234,6 +234,10 @@ def _translate_batch_beam_search(ctx, encoder_input, source_mask):
                         beam_hypotheses[batch_idx].sort(
                             key=lambda x: x[0], reverse=True
                         )
+                else:
+                    # TODO: add else branch for continuing prediction.
+                    # prepare the next iteration's sequences
+                    pass
         break
 
         #######################################
